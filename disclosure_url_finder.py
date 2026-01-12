@@ -1,16 +1,46 @@
 import re
 import time
+import io
 from collections import deque
 import pandas as pd
 from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+import pdfplumber
+
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
 
 # ---- Keywords and URL patterns learned from your sample disclosure URLs ----
+# DLG-specific keywords (must be present in content)
+DLG_CONTENT_RE = re.compile(
+    r"(default\s+loss\s+guarantee|first\s+loss\s+default\s+guarantee|"
+    r"\bDLG\b.*?(portfolio|lender|nbfc|partner|outstanding)|"
+    r"\bFLDG\b.*?(portfolio|lender|nbfc|partner)|"
+    r"(portfolio|lender|nbfc).*?\bDLG\b|"
+    r"outstanding\s+aum.*?(lender|partner|portfolio)|"
+    r"lending\s+partner.*?(portfolio|outstanding|aum)|"
+    r"digital\s+lending.*?(guarantee|portfolio))",
+    re.I,
+)
+
+# Looser DLG validation for high-scoring URLs
+DLG_CONTENT_LOOSE_RE = re.compile(
+    r"(\bDLG\b|\bFLDG\b|default\s+loss|first\s+loss|"
+    r"lending\s+partner|outstanding.*?(aum|portfolio)|"
+    r"portfolio.*?(lender|nbfc|partner)|"
+    r"digital\s+lending|nbfc.*?(partner|lender))",
+    re.I,
+)
+
+# General disclosure keywords (for URLs and links)
 DISCLOSURE_KEYWORDS_RE = re.compile(
-    r"(default\s+loss|dlg\b|fldg\b|other\s*disclos|disclosur|policy\s*disclos|website\s*disclos|compliance)",
+    r"(default\s+loss|dlg\b|fldg\b|other\s*disclos|disclosur|declarati|policy\s*disclos|website\s*disclos|compliance)",
     re.I,
 )
 
@@ -23,6 +53,10 @@ STRONG_URL_HINTS_RE = re.compile(
 # A practical list of common paths to probe FIRST (fast-path)
 COMMON_DISCLOSURE_PATHS = [
     # your examples + common variants
+    "/dlg-declaration",
+    "/dlg-declaration/",
+    "/dlg_declaration",
+    "/dlg_declaration/",
     "/policy-disclosure",
     "/policy-disclosure/",
     "/dlg-disclosure",
@@ -129,30 +163,84 @@ def _probe_url_exists(session: requests.Session, url: str, timeout: int = 15) ->
         return False
 
 
+def _check_dlg_content(session: requests.Session, url: str, timeout: int = 15, use_loose: bool = False) -> bool:
+    """
+    Verify that the page actually contains DLG-specific content.
+    Returns True if DLG keywords are found in the page content.
+    use_loose: If True, uses looser regex for high-scoring candidates
+    """
+    regex_pattern = DLG_CONTENT_LOOSE_RE if use_loose else DLG_CONTENT_RE
+    
+    try:
+        r = session.get(url, timeout=timeout, allow_redirects=True)
+        if r.status_code >= 400:
+            return False
+        
+        # Check content type
+        ctype = (r.headers.get("Content-Type") or "").lower()
+        
+        # For PDFs, extract text and check for DLG content
+        if "application/pdf" in ctype or url.lower().endswith(".pdf"):
+            try:
+                with pdfplumber.open(io.BytesIO(r.content)) as pdf:
+                    text = ""
+                    # Check first few pages only (performance)
+                    for page in pdf.pages[:5]:
+                        page_text = page.extract_text() or ""
+                        text += page_text + " "
+                        # Early exit if we find DLG content
+                        if regex_pattern.search(text):
+                            return True
+                    # Final check on all extracted text
+                    return bool(regex_pattern.search(text))
+            except Exception:
+                return False
+        
+        # For HTML, check content
+        if "text/html" in ctype or "application/xhtml" in ctype:
+            html = r.text or ""
+            soup = BeautifulSoup(html, "html.parser")
+            text = soup.get_text(" ", strip=True)
+            return bool(regex_pattern.search(text))
+        
+        return False
+    except requests.RequestException:
+        return False
+
+
 def _score_candidate(url: str, anchor_text: str = "") -> float:
     u = (url or "").lower()
     t = (anchor_text or "").lower()
     score = 0.0
 
-    # Strong URL patterns
+    # MAXIMUM priority: DLG in anchor text (like "DLG Declaration")
+    if "dlg" in t or "fldg" in t:
+        score += 20
+    
+    # Strong URL patterns (DLG-specific)
+    if "dlg" in u or "fldg" in u:
+        score += 15  # Highest priority for DLG-specific URLs
+    
     if STRONG_URL_HINTS_RE.search(u):
         score += 10
 
     # Keyword in URL and/or text
     if DISCLOSURE_KEYWORDS_RE.search(u):
-        score += 6
+        score += 5
     if DISCLOSURE_KEYWORDS_RE.search(t):
-        score += 6
+        score += 5
 
-    # Extra boosts
-    if "dlg" in u or "fldg" in u:
-        score += 4
+    # Boost for PDFs (often contain disclosure data)
     if u.endswith(".pdf") or ".pdf?" in u:
-        score += 2
+        score += 3
 
-    # Penalize obvious non-targets
-    if any(x in u for x in ("/blog", "/careers", "/jobs", "/press", "/news")):
-        score -= 2
+    # Penalize non-DLG pages more heavily
+    if any(x in u for x in ("/blog", "/careers", "/jobs", "/press", "/news", "/privacy", "/terms", "/cookie")):
+        score -= 5
+    
+    # Penalize generic compliance/legal pages unless they have DLG keywords
+    if any(x in u for x in ("/legal", "/policies", "/disclaimer", "/compliance")) and "dlg" not in u and "dlg" not in t:
+        score -= 3
 
     return score
 
@@ -160,12 +248,14 @@ def _score_candidate(url: str, anchor_text: str = "") -> float:
 def find_dlg_disclosure_url(
     homepage_url: str,
     *,
-    max_pages: int = 35,
+    max_pages: int = 50,
     timeout: int = 20,
     delay_s: float = 0.05,
-) -> str | None:
+) -> tuple[str | None, str]:
     """
-    Returns the best-matching DLG/Disclosure link (page or PDF) for a website.
+    Returns (url, reason) tuple where:
+    - url: best-matching DLG/Disclosure link (page or PDF) or None
+    - reason: explanation of result (why found or not found)
 
     Strategy:
       1) Fast-path: probe common disclosure URLs (including /policy-disclosure)
@@ -190,12 +280,14 @@ def find_dlg_disclosure_url(
     for path in COMMON_DISCLOSURE_PATHS:
         cand = urljoin(origin + "/", path.lstrip("/"))
         if _probe_url_exists(session, cand):
-            # If it exists AND looks relevant, return immediately
-            if _score_candidate(cand) >= 10:
-                return cand
+            # If it exists AND looks relevant, check content before returning
+            if _score_candidate(cand) >= 10 and _check_dlg_content(session, cand):
+                return cand, f"Found via fast-path probe: {path}"
 
     best_url = None
     best_score = float("-inf")
+    crawled_pages = 0
+    total_links_found = 0
 
     def consider(url: str, anchor_text: str = ""):
         nonlocal best_url, best_score
@@ -221,13 +313,44 @@ def find_dlg_disclosure_url(
 
         html, final_url, status = _fetch_html(session, page_url, timeout=timeout)
         pages += 1
+        crawled_pages += 1
         if delay_s:
             time.sleep(delay_s)
 
         if not html:
-            continue
+            # Retry homepage with Playwright if initial fetch failed or returned empty
+            if page_url == homepage_url and PLAYWRIGHT_AVAILABLE:
+                try:
+                    from playwright.sync_api import sync_playwright
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        page = browser.new_page()
+                        page.goto(page_url, wait_until="networkidle", timeout=30000)
+                        html = page.content().encode("utf-8", errors="ignore")
+                        browser.close()
+                        if html:
+                            soup = BeautifulSoup(html, "html.parser")
+                except Exception:
+                    continue
+            else:
+                continue
+        else:
+            soup = BeautifulSoup(html, "html.parser")
 
-        soup = BeautifulSoup(html, "html.parser")
+        # Check if page has no links (JS-rendered) - try Playwright for homepage only
+        all_links = soup.find_all("a", href=True)
+        if page_url == homepage_url and len(all_links) == 0 and PLAYWRIGHT_AVAILABLE:
+            try:
+                from playwright.sync_api import sync_playwright
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    page = browser.new_page()
+                    page.goto(page_url, wait_until="networkidle", timeout=30000)
+                    html = page.content()
+                    browser.close()
+                    soup = BeautifulSoup(html, "html.parser")
+            except Exception:
+                pass
 
         # 2) Always prioritize footer links
         footer_nodes = soup.find_all("footer")
@@ -255,18 +378,33 @@ def find_dlg_disclosure_url(
             if _is_bad_href(href):
                 continue
             abs_u = urljoin(final_url, href)
-            if _is_asset(abs_u) or not _same_site(origin, abs_u):
+            if _is_asset(abs_u):
                 continue
+            
             txt = a.get_text(" ", strip=True) or ""
+            
+            # Allow external links if they're PDFs with high relevance scores
+            is_external = not _same_site(origin, abs_u)
+            is_pdf = abs_u.lower().endswith(".pdf") or ".pdf?" in abs_u.lower()
+            score = _score_candidate(abs_u, txt)
+            
+            if is_external and not (is_pdf and score >= 15):
+                # Skip external links unless they're highly-scored PDFs
+                continue
 
             # score any disclosure-ish anchors
             if DISCLOSURE_KEYWORDS_RE.search(href) or DISCLOSURE_KEYWORDS_RE.search(txt) or STRONG_URL_HINTS_RE.search(abs_u):
                 consider(abs_u, txt)
-                outlinks.append(abs_u)
+                total_links_found += 1
+                if not is_external:  # Only crawl same-site links
+                    outlinks.append(abs_u)
 
         # If we found a very strong match, stop
         if best_url and best_score >= 14:
-            return best_url
+            # Use loose validation for very high scores (>20)
+            use_loose = best_score >= 20
+            if _check_dlg_content(session, best_url, use_loose=use_loose):
+                return best_url, f"Found high-scoring link (score: {best_score:.1f})"
 
         # Enqueue strategy:
         # - footer links first (even if not keyworded, because disclosure pages are often there)
@@ -304,12 +442,78 @@ def find_dlg_disclosure_url(
                 q.append(u)
                 seen.add(u)
 
-    # Final: return best scoring candidate we saw
-    return best_url if best_url and best_score > 0 else None
+    # Final: validate best candidate has DLG content before returning
+    if best_url and best_score > 0:
+        # For high-scoring URLs, use looser validation
+        session_final = requests.Session()
+        session_final.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        
+        # Use loose validation for scores >= 20, strict for lower scores
+        use_loose = best_score >= 20
+        
+        if _check_dlg_content(session_final, best_url, use_loose=use_loose):
+            validation_type = "loose" if use_loose else "strict"
+            return best_url, f"Found after crawling {crawled_pages} pages (score: {best_score:.1f}, links evaluated: {total_links_found}, validation: {validation_type})"
+        else:
+            return None, f"Best candidate found (score: {best_score:.1f}) but failed DLG content validation. Crawled {crawled_pages} pages, evaluated {total_links_found} links."
+    
+    if total_links_found == 0:
+        return None, f"No relevant disclosure links found after crawling {crawled_pages} pages"
+    else:
+        return None, f"Found {total_links_found} potential links but none contained DLG-specific content. Crawled {crawled_pages} pages."
 
 
 if __name__ == "__main__":
-    source_url = "www.agrosperity.com"
-    dlg_url = find_dlg_disclosure_url(source_url)
-    print('Home URL: {0} - DLG URL: {1}'.format(source_url, dlg_url))
-
+    # Configuration
+    input_csv = "data\\lsp_home.csv"
+    limit = None  # Set to None to process all
+    
+    # Read URLs from CSV
+    df = pd.read_csv(input_csv, header=None, names=["homepage_url"])
+    urls = df["homepage_url"].dropna().tolist()
+    
+    if limit:
+        urls = urls[:limit]
+    
+    print(f"Processing {len(urls)} URLs...\n")
+    
+    results = []
+    for i, source_url in enumerate(urls, 1):
+        print(f"[{i}/{len(urls)}] Checking: {source_url}")
+        try:
+            dlg_url, reason = find_dlg_disclosure_url(source_url)
+            if dlg_url:
+                print(f"  ✓ Found: {dlg_url}")
+                print(f"    Reason: {reason}")
+                results.append({
+                    "homepage_url": source_url, 
+                    "disclosure_url": dlg_url,
+                    "status": "Found",
+                    "reason": reason
+                })
+            else:
+                print(f"  ✗ Not found")
+                print(f"    Reason: {reason}")
+                results.append({
+                    "homepage_url": source_url, 
+                    "disclosure_url": "",
+                    "status": "Not Found",
+                    "reason": reason
+                })
+        except Exception as e:
+            error_msg = str(e)[:150]
+            print(f"  ✗ Error: {error_msg}")
+            results.append({
+                "homepage_url": source_url, 
+                "disclosure_url": "",
+                "status": "Error",
+                "reason": error_msg
+            })
+        print()
+    
+    # Save results
+    output_csv = "data\\lsp_disclosure_results_v2.csv"
+    pd.DataFrame(results).to_csv(output_csv, index=False)
+    print(f"\nResults saved to: {output_csv}")

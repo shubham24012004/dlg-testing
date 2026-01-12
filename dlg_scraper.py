@@ -203,6 +203,6 @@ def run_scrape(master_csv: str, raw_csv: str, limit: Optional[int] = None) -> No
 # -----------------------------
 
 if __name__ == "__main__":
-    ip_master_csv = "data\\lsp_sources.csv"
-    op_raw_csv = "data\\dlg_raw.csv"
+    ip_master_csv = "data\\lsp_sources_2.csv"
+    op_raw_csv = "data\\dlg_raw_2.csv"
     run_scrape(ip_master_csv, op_raw_csv)

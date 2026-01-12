@@ -50,8 +50,8 @@ def parse_amount_any(s: Any) -> Optional[float]:
     if not txt:
         return None
     txt = txt.replace("₹", "").replace("INR", "").replace("Rs.", "").replace("Rs", "")
-    txt = txt.replace(",", " ")
-    txt = re.sub(r"\s+", " ", txt).strip()
+    txt = txt.replace(",", "")
+    txt = re.sub(r"\s+", "", txt).strip()
     m = re.search(r"(-?\d+(?:\.\d+)?)", txt)
     if not m:
         return None
