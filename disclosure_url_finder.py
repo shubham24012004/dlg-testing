@@ -4,6 +4,7 @@ import io
 from collections import deque
 import pandas as pd
 from urllib.parse import urljoin, urlparse
+import xml.etree.ElementTree as ET
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,6 +21,8 @@ except ImportError:
 # DLG-specific keywords (must be present in content)
 DLG_CONTENT_RE = re.compile(
     r"(default\s+loss\s+guarantee|first\s+loss\s+default\s+guarantee|"
+    r"guidelines?\s+on\s+default\s+loss\s+guarantee|"  # Added for "Guidelines on Default Loss Guarantee"
+    r"disclosure\s+under.*?default\s+loss\s+guarantee|"  # Added for "Disclosure Under ... Default Loss Guarantee"
     r"\bDLG\b.*?(portfolio|lender|nbfc|partner|outstanding)|"
     r"\bFLDG\b.*?(portfolio|lender|nbfc|partner)|"
     r"(portfolio|lender|nbfc).*?\bDLG\b|"
@@ -32,10 +35,11 @@ DLG_CONTENT_RE = re.compile(
 # Looser DLG validation for high-scoring URLs
 DLG_CONTENT_LOOSE_RE = re.compile(
     r"(\bDLG\b|\bFLDG\b|default\s+loss|first\s+loss|"
+    r"guideline.*?default.*?loss|disclosure.*?default.*?loss|"  # More flexible matching
     r"lending\s+partner|outstanding.*?(aum|portfolio)|"
     r"portfolio.*?(lender|nbfc|partner)|"
     r"digital\s+lending|nbfc.*?(partner|lender))",
-    re.I,
+    re.I | re.DOTALL,  # Added DOTALL to match across newlines
 )
 
 # General disclosure keywords (for URLs and links)
@@ -245,10 +249,121 @@ def _score_candidate(url: str, anchor_text: str = "") -> float:
     return score
 
 
+# ==================== FALLBACK STRATEGIES ====================
+
+def _search_pdfs(session: requests.Session, homepage_url: str, origin: str) -> tuple[str | None, str]:
+    """
+    Strategy: Search specifically for PDF files that might contain DLG disclosures
+    """
+    try:
+        html, _, _ = _fetch_html(session, homepage_url)
+        if not html:
+            return None, ""
+        
+        soup = BeautifulSoup(html, "html.parser")
+        pdf_links = []
+        
+        for a in soup.find_all("a", href=True):
+            href = a.get("href", "")
+            if ".pdf" in href.lower():
+                abs_url = urljoin(homepage_url, href)
+                text = a.get_text(" ", strip=True)
+                score = _score_candidate(abs_url, text)
+                if score >= 10:  # Only consider relevant PDFs
+                    pdf_links.append((abs_url, score))
+        
+        # Check best PDF
+        if pdf_links:
+            pdf_links.sort(key=lambda x: x[1], reverse=True)
+            best_pdf = pdf_links[0][0]
+            if _check_dlg_content(session, best_pdf, use_loose=True):
+                return best_pdf, f"Fallback: PDF search (score: {pdf_links[0][1]:.1f})"
+    except Exception:
+        pass
+    
+    return None, ""
+
+
+def _search_sitemap(session: requests.Session, origin: str) -> tuple[str | None, str]:
+    """
+    Strategy: Check sitemap.xml for disclosure URLs
+    """
+    sitemap_urls = [
+        f"{origin}/sitemap.xml",
+        f"{origin}/sitemap_index.xml",
+        f"{origin}/sitemap-index.xml"
+    ]
+    
+    try:
+        for sitemap_url in sitemap_urls:
+            try:
+                r = session.get(sitemap_url, timeout=10)
+                if r.status_code != 200:
+                    continue
+                
+                # Parse XML
+                root = ET.fromstring(r.content)
+                # Handle namespaces
+                ns = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+                
+                urls = root.findall('.//ns:loc', ns) or root.findall('.//loc')
+                
+                for loc in urls:
+                    url = loc.text
+                    if url and any(keyword in url.lower() for keyword in ['dlg', 'disclosure', 'compliance', 'rbi']):
+                        if _check_dlg_content(session, url, use_loose=True):
+                            return url, "Fallback: Found in sitemap.xml"
+            except Exception:
+                continue
+    except Exception:
+        pass
+    
+    return None, ""
+
+
+def _search_special_sections(session: requests.Session, homepage_url: str, origin: str) -> tuple[str | None, str]:
+    """
+    Strategy: Look for investor relations, regulatory, or compliance sections
+    """
+    special_paths = [
+        "/investor-relations",
+        "/investors",
+        "/regulatory",
+        "/regulatory-disclosures",
+        "/rbi-compliance",
+        "/compliance",
+        "/legal-and-regulatory",
+        "/about/compliance",
+        "/company/compliance"
+    ]
+    
+    for path in special_paths:
+        try:
+            url = urljoin(origin + "/", path.lstrip("/"))
+            r = session.get(url, timeout=10, allow_redirects=True)
+            if r.status_code >= 400:
+                continue
+            
+            # Parse the section page
+            soup = BeautifulSoup(r.text, "html.parser")
+            for a in soup.find_all("a", href=True):
+                href = a.get("href", "")
+                text = a.get_text(" ", strip=True)
+                
+                if any(kw in href.lower() or kw in text.lower() for kw in ['dlg', 'default loss', 'portfolio']):
+                    abs_url = urljoin(r.url, href)
+                    if _check_dlg_content(session, abs_url, use_loose=True):
+                        return abs_url, f"Fallback: Found in {path}"
+        except Exception:
+            continue
+    
+    return None, ""
+
+
 def find_dlg_disclosure_url(
     homepage_url: str,
     *,
-    max_pages: int = 50,
+    max_pages: int = 40,
     timeout: int = 20,
     delay_s: float = 0.05,
 ) -> tuple[str | None, str]:
@@ -288,6 +403,10 @@ def find_dlg_disclosure_url(
     best_score = float("-inf")
     crawled_pages = 0
     total_links_found = 0
+    footer_links_found = 0
+    pdfs_found = 0
+    high_score_candidates = []  # Track candidates with score > 5
+    homepage_accessible = True
 
     def consider(url: str, anchor_text: str = ""):
         nonlocal best_url, best_score
@@ -318,6 +437,8 @@ def find_dlg_disclosure_url(
             time.sleep(delay_s)
 
         if not html:
+            if page_url == homepage_url:
+                homepage_accessible = False
             # Retry homepage with Playwright if initial fetch failed or returned empty
             if page_url == homepage_url and PLAYWRIGHT_AVAILABLE:
                 try:
@@ -366,6 +487,8 @@ def find_dlg_disclosure_url(
                 abs_u = urljoin(final_url, href)
                 text = a.get_text(" ", strip=True) or ""
                 footer_links.append((abs_u, text))
+        
+        footer_links_found += len(footer_links)
 
         # Evaluate footer links first
         for u, txt in footer_links:
@@ -388,6 +511,9 @@ def find_dlg_disclosure_url(
             is_pdf = abs_u.lower().endswith(".pdf") or ".pdf?" in abs_u.lower()
             score = _score_candidate(abs_u, txt)
             
+            if is_pdf:
+                pdfs_found += 1
+            
             if is_external and not (is_pdf and score >= 15):
                 # Skip external links unless they're highly-scored PDFs
                 continue
@@ -396,6 +522,11 @@ def find_dlg_disclosure_url(
             if DISCLOSURE_KEYWORDS_RE.search(href) or DISCLOSURE_KEYWORDS_RE.search(txt) or STRONG_URL_HINTS_RE.search(abs_u):
                 consider(abs_u, txt)
                 total_links_found += 1
+                
+                # Track high-scoring candidates for diagnostics
+                if score > 5 and len(high_score_candidates) < 5:
+                    high_score_candidates.append((abs_u, score, txt[:50]))
+                
                 if not is_external:  # Only crawl same-site links
                     outlinks.append(abs_u)
 
@@ -457,12 +588,74 @@ def find_dlg_disclosure_url(
             validation_type = "loose" if use_loose else "strict"
             return best_url, f"Found after crawling {crawled_pages} pages (score: {best_score:.1f}, links evaluated: {total_links_found}, validation: {validation_type})"
         else:
-            return None, f"Best candidate found (score: {best_score:.1f}) but failed DLG content validation. Crawled {crawled_pages} pages, evaluated {total_links_found} links."
+            # Don't give up yet - try fallback strategies
+            pass
     
-    if total_links_found == 0:
-        return None, f"No relevant disclosure links found after crawling {crawled_pages} pages"
+    # ==================== FALLBACK STRATEGIES ====================
+    # Primary search failed - try alternative approaches
+    
+    session_fallback = requests.Session()
+    session_fallback.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    })
+    
+    fallback_attempts = []
+    
+    # Strategy 1: Search for PDFs specifically
+    pdf_url, pdf_reason = _search_pdfs(session_fallback, homepage_url, origin)
+    if pdf_url:
+        return pdf_url, pdf_reason
     else:
-        return None, f"Found {total_links_found} potential links but none contained DLG-specific content. Crawled {crawled_pages} pages."
+        fallback_attempts.append("PDF search: no DLG content in PDFs")
+    
+    # Strategy 2: Check sitemap.xml
+    sitemap_url, sitemap_reason = _search_sitemap(session_fallback, origin)
+    if sitemap_url:
+        return sitemap_url, sitemap_reason
+    else:
+        fallback_attempts.append("sitemap.xml: not found or no relevant URLs")
+    
+    # Strategy 3: Check special sections (investor relations, regulatory, etc.)
+    special_url, special_reason = _search_special_sections(session_fallback, homepage_url, origin)
+    if special_url:
+        return special_url, special_reason
+    else:
+        fallback_attempts.append("special sections: none found")
+    
+    # Build detailed failure message
+    fallback_summary = "; ".join(fallback_attempts)
+    
+    # All strategies failed - provide comprehensive diagnostic message
+    details = []
+    
+    if not homepage_accessible:
+        details.append("⚠ Homepage inaccessible or returned empty content")
+    
+    details.append(f"Crawled {crawled_pages} pages")
+    
+    if footer_links_found > 0:
+        details.append(f"analyzed {footer_links_found} footer links")
+    else:
+        details.append("no footer section found")
+    
+    if pdfs_found > 0:
+        details.append(f"found {pdfs_found} PDFs")
+    
+    if total_links_found > 0:
+        details.append(f"evaluated {total_links_found} disclosure-related links")
+        if best_url and best_score > 0:
+            details.append(f"best candidate score: {best_score:.1f} at {best_url[:60]}... (failed DLG content validation)")
+        if high_score_candidates:
+            candidate_list = "; ".join([f"{url[:40]}... (score: {sc:.1f})" for url, sc, txt in high_score_candidates[:3]])
+            details.append(f"top candidates: {candidate_list}")
+    else:
+        details.append("no disclosure-related links found (site may use JavaScript navigation or non-standard structure)")
+    
+    details.append(f"Fallback attempts: {fallback_summary}")
+    
+    reason = "Not found - " + "; ".join(details)
+    
+    return None, reason
 
 
 if __name__ == "__main__":
@@ -514,6 +707,6 @@ if __name__ == "__main__":
         print()
     
     # Save results
-    output_csv = "data\\lsp_disclosure_results_v2.csv"
+    output_csv = "data\\lsp_disclosure_results_v3.csv"
     pd.DataFrame(results).to_csv(output_csv, index=False)
     print(f"\nResults saved to: {output_csv}")

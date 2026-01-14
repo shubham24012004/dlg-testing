@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from models import FetchResult, SourceRow
 from utils import parse_bool, extract_from_pdf, extract_from_html_tables, extract_dlg_from_plain_text, looks_like_pdf, \
-    normalize_rows
-from content_fetchers import fetch_with_requests
+    normalize_rows, load_rules, extract_finsall_grand_total
+from content_fetchers import fetch_with_requests, BROWSER_USER_AGENT, BROWSER_HEADERS
 
 try:
     from playwright.sync_api import sync_playwright
@@ -16,14 +16,23 @@ except Exception:
     PLAYWRIGHT_AVAILABLE = False
 
 
-def fetch_with_playwright(url: str, timeout_ms: int = 60000) -> FetchResult:
+def fetch_with_playwright(url: str, timeout_ms: int = 60000, pre_click_js: str = None) -> FetchResult:
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError("Playwright not installed/available. Install playwright to scrape JS-rendered pages.")
+    header_overrides = {k: v for k, v in BROWSER_HEADERS.items() if k.lower() != "user-agent"}
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+        context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=header_overrides)
+        page = context.new_page()
         page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+        
+        # Execute custom JavaScript if provided (e.g., to click tabs)
+        if pre_click_js:
+            page.evaluate(pre_click_js)
+            page.wait_for_timeout(2000)  # Wait for content to load after click
+        
         html = page.content().encode("utf-8", errors="ignore")
+        context.close()
         browser.close()
         return FetchResult(url=url, status_code=200, content_type="text/html; charset=utf-8", body=html,
                            fetch_mode_used="playwright")
@@ -62,11 +71,15 @@ def scrape_one(src: SourceRow) -> Tuple[str, Optional[str], Optional[str], List[
     fetch_hint = (src.fetch_hint or "auto").lower()
     parse_hint = (src.parse_hint or "auto").lower()
 
+    # Load rules to get pre_click_js if available
+    rules = load_rules(src.rules_json) if src.rules_json else {}
+    pre_click_js = rules.get("pre_click_js")
+
     fetch: Optional[FetchResult] = None
 
     # Fetch (requests retry happens inside decorator)
     if fetch_hint == "playwright":
-        fetch = fetch_with_playwright(url)
+        fetch = fetch_with_playwright(url, pre_click_js=pre_click_js)
     else:
         fetch = fetch_with_requests(url)
 
@@ -76,7 +89,7 @@ def scrape_one(src: SourceRow) -> Tuple[str, Optional[str], Optional[str], List[
     # Parse
     raw_rows: List[Dict[str, Any]] = []
     if parse_hint == "plain_text":
-        raw_rows = extract_dlg_from_plain_text(fetch.body, lsp_name=src.lsp_name, scrape_ts=scrape_ts)
+        raw_rows = extract_dlg_from_plain_text(fetch.body, lsp_name=src.lsp_name, scrape_ts=scrape_ts, rules_json=src.rules_json)
     elif parse_hint == "pdf_table" or looks_like_pdf(fetch):
         raw_rows = extract_from_pdf(fetch)
     elif parse_hint == "html_table":
@@ -90,9 +103,12 @@ def scrape_one(src: SourceRow) -> Tuple[str, Optional[str], Optional[str], List[
 
             # If no rows, try JS fallback
             if not raw_rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
-                fetch_pw = fetch_with_playwright(url)
+                fetch_pw = fetch_with_playwright(url, pre_click_js=pre_click_js)
                 raw_rows = extract_from_html_tables(fetch_pw)
                 fetch = fetch_pw
+
+    if not raw_rows and src.lsp_name.lower().startswith("finsall"):
+        raw_rows = extract_finsall_grand_total(fetch, src.lsp_name, scrape_ts, rules)
 
     normalized, status = normalize_rows(
         raw_rows=raw_rows,
@@ -203,6 +219,6 @@ def run_scrape(master_csv: str, raw_csv: str, limit: Optional[int] = None) -> No
 # -----------------------------
 
 if __name__ == "__main__":
-    ip_master_csv = "data\\lsp_sources_2.csv"
-    op_raw_csv = "data\\dlg_raw_2.csv"
+    ip_master_csv = "data\\lsp_sources_latest.csv"
+    op_raw_csv = "data\\dlg_raw_latest_v31.csv"
     run_scrape(ip_master_csv, op_raw_csv)
