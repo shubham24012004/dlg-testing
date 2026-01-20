@@ -1,25 +1,8 @@
-from dataclasses import dataclass
-from typing import Optional
+"""Compatibility shim for legacy imports.
 
+Prefer ``DatabaseOperation.SQLAlchemy.DatabaseModels`` going forward.
+"""
 
-# -----------------------------
-# TYPES
-# -----------------------------
+from DatabaseOperation.SQLAlchemy.DatabaseModels import FetchResult, LspMaster
 
-@dataclass
-class SourceRow:
-    lsp_name: str
-    disclosure_url: str
-    is_active: bool
-    fetch_hint: str  # auto|requests|playwright
-    parse_hint: str  # auto|html_table|pdf_table
-    rules_json: Optional[str]
-
-
-@dataclass
-class FetchResult:
-    url: str
-    status_code: int
-    content_type: str
-    body: bytes
-    fetch_mode_used: str  # requests|playwright
+SourceRow = LspMaster

@@ -5,7 +5,7 @@ import datetime as dt
 from bs4 import BeautifulSoup
 from dateutil import parser as dateparser
 from typing import Any, Dict, List, Optional, Tuple
-from models import FetchResult
+from DatabaseOperation.SQLAlchemy.DatabaseModels import FetchResult
 import pdfplumber
 
 
@@ -107,6 +107,9 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                     ason_text = match.group(1)
 
             tables = page.extract_tables() or []
+            if not tables:
+                rows.extend(_extract_portfolio_rows_from_pdf_text(text, ason_text))
+                continue
             for tbl in tables:
                 if not tbl or len(tbl) < 2:
                     continue
@@ -123,6 +126,50 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                     row = {header[i] if i < len(header) else f"col_{i}": vals[i] for i in range(len(vals))}
                     row['ason'] = parse_date_any(ason_text)
                     rows.append(row)
+    return rows
+
+
+def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dict[str, Any]]:
+    """
+    Fallback parser for PDF disclosures where tables are rendered as plain text lines
+    (e.g., FinAGG). Detects lines that start with "Portfolio" and captures amount/FLDG.
+    """
+    if not text:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    ason_dt = parse_date_any(ason_text)
+    pattern = re.compile(r"^(portfolio\s*\d+)\s+([0-9,\s]+?)(?:\s+(yes|no))?\s*$", re.IGNORECASE)
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        # Normalize whitespace and fix OCR quirks like "Portfoliol" (Portfolio 1)
+        line = re.sub(r"(?i)portfoliol", "Portfolio 1", line, count=1)
+        line = re.sub(r"(?i)portfolioi(?![a-z])", "Portfolio 1", line, count=1)
+        line = re.sub(r"(?i)(portfolio)(\d)", r"\1 \2", line)
+        line = re.sub(r"\s+", " ", line)
+
+        match = pattern.match(line)
+        if not match:
+            continue
+
+        portfolio_label = " ".join(match.group(1).split())
+        amount_chunk = match.group(2).replace(" ", "")
+        amount_clean = re.sub(r"[^0-9.,]", "", amount_chunk)
+        if not amount_clean:
+            continue
+
+        fldg_flag = match.group(3)
+        rows.append({
+            "Regulated Entity (Lender)": portfolio_label,
+            "Portfolio OS as on 31-12-2025": amount_clean,
+            "FLDG": fldg_flag.title() if fldg_flag else None,
+            'ason': ason_dt
+        })
+
     return rows
 
 
