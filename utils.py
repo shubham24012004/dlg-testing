@@ -563,9 +563,16 @@ def parse_cred_style_dlg_plain_text(
 # -----------------------------
 
 
-def load_rules(rules_json: Optional[str]) -> Dict[str, Any]:
+def load_rules(rules_json: Optional[object]) -> Dict[str, Any]:
+    """Accept either a JSON string or an already-parsed mapping and return a dict.
+
+    Returns empty dict on None or parse error.
+    """
     if not rules_json:
         return {}
+    # If already a mapping/dict, return as-is
+    if isinstance(rules_json, dict):
+        return rules_json
     try:
         return json.loads(rules_json)
     except Exception:

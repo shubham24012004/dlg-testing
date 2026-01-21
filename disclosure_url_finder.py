@@ -1,6 +1,9 @@
 import re
 import time
 import io
+import os
+import sqlite3
+import datetime as dt
 from collections import deque
 import pandas as pd
 from urllib.parse import urljoin, urlparse
@@ -660,12 +663,19 @@ def find_dlg_disclosure_url(
 
 if __name__ == "__main__":
     # Configuration
-    input_csv = "data\\lsp_home.csv"
     limit = None  # Set to None to process all
-    
-    # Read URLs from CSV
-    df = pd.read_csv(input_csv, header=None, names=["homepage_url"])
-    urls = df["homepage_url"].dropna().tolist()
+
+    # Read homepage URLs from DB (table: lsp_master) instead of CSV
+    db_path = os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db")
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT home_url FROM lsp_master WHERE active=1 AND home_url IS NOT NULL")
+        rows = cur.fetchall()
+        urls = [r[0] for r in rows if r and r[0]]
+    finally:
+        conn.close()
     
     if limit:
         urls = urls[:limit]
@@ -706,7 +716,28 @@ if __name__ == "__main__":
             })
         print()
     
-    # Save results
-    output_csv = "data\\lsp_disclosure_results_v3.csv"
-    pd.DataFrame(results).to_csv(output_csv, index=False)
-    print(f"\nResults saved to: {output_csv}")
+    # Persist results to the project's SQLite DB instead of CSV
+    db_path = os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db")
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS disclosure_url_finder_results (
+                homepage_url TEXT,
+                disclosure_url TEXT,
+                status TEXT,
+                reason TEXT,
+                checked_at TIMESTAMP
+            )
+            """
+        )
+        for r in results:
+            cur.execute(
+                "INSERT INTO disclosure_url_finder_results (homepage_url, disclosure_url, status, reason, checked_at) VALUES (?, ?, ?, ?, ?)",
+                (r.get("homepage_url"), r.get("disclosure_url"), r.get("status"), r.get("reason"), dt.datetime.utcnow()),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"\nResults persisted to DB: {db_path} (table: disclosure_url_finder_results)")

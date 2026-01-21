@@ -1,7 +1,7 @@
 """
 SQLAlchemy ORM models for DLG analysis tables.
 """
-from sqlalchemy import Column, String, Boolean, Float, DateTime, Enum as SAEnum, Text, Integer, ForeignKey
+from sqlalchemy import Column, String, Boolean, Float, Enum as SAEnum, Text, Integer, ForeignKey, TIMESTAMP, JSON
 from sqlalchemy.orm import declarative_base
 import datetime as dt
 import os
@@ -19,7 +19,6 @@ class AuditAction(Enum):
 class LspMasterORM(Base):
     __tablename__ = "lsp_master"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    legacy_id = Column(String, unique=True, nullable=True)
     name = Column(String, nullable=False)
     home_url = Column(String)
     active = Column(Boolean, default=True)
@@ -31,8 +30,8 @@ class DlgCrawlerConfigORM(Base):
     is_active = Column(Boolean, default=True)
     parse_hint = Column(String, default="auto")
     fetch_hint = Column(String, default="auto")
-    rules_json = Column(Text)
-    last_crawl_date = Column(DateTime)
+    rules_json = Column(JSON)
+    last_crawl_date = Column(TIMESTAMP(timezone=True))
 
 class DlgRawORM(Base):
     __tablename__ = "dlg_raw"
@@ -41,16 +40,15 @@ class DlgRawORM(Base):
     lender = Column(String, primary_key=True)
     portfolio = Column(String, primary_key=True)
     amount = Column(Float)
-    as_on_timestamp = Column(DateTime, primary_key=True)
-    scrape_timestamp = Column(DateTime, primary_key=True)
+    as_on_timestamp = Column(TIMESTAMP(timezone=True), primary_key=True)
+    scrape_timestamp = Column(TIMESTAMP(timezone=True), primary_key=True)
     complete = Column(String)
 
 class AuditLogORM(Base):
     __tablename__ = "audit_log"
     id = Column(Integer, primary_key=True, autoincrement=True)
     lsp_id = Column(Integer, nullable=True)
-    legacy_lsp_id = Column(String, nullable=True)
     auto_manual = Column(String)
     user_id = Column(String)
-    payload = Column(Text)
+    payload = Column(JSON)
     action_taken = Column(SAEnum(AuditAction), nullable=False)

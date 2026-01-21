@@ -5,11 +5,7 @@ from General.Controllers.DlgCrawlerController import DlgCrawlerController
 
 def main() -> None:
     controller = DlgCrawlerController()
-    controller.run_scrape(
-        master_csv="data\\lsp_sources_latest.csv",
-        raw_csv="data\\dlg_raw_latest_v39.csv",
-        limit=None,
-    )
+    controller.run_scrape(limit=None)
 
 
 if __name__ == "__main__":

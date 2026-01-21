@@ -25,13 +25,17 @@ class AuditAction(Enum):
 
 @dataclass(slots=True)
 class LspMaster:
-    """Represents one row from the ``lsp_master`` table/CSV."""
+    """Represents one row from the ``lsp_master`` table/CSV.
+
+    `rules_json` is stored in the DB as JSON/text but represented in-memory
+    as an already-parsed mapping (dict) when available.
+    """
     lsp_name: str
     disclosure_url: str
     is_active: bool
     fetch_hint: str
     parse_hint: str
-    rules_json: Optional[str] = None
+    rules_json: Optional[Dict[str, Any]] = None
     lsp_id: Optional[str] = None
     home_url: Optional[str] = None
     id: Optional[int] = None
@@ -44,12 +48,15 @@ SourceRow = LspMaster
 
 @dataclass(slots=True)
 class DlgCrawlerConfig:
-    """High-level knobs that control how a disclosure is fetched/parsed."""
+    """High-level knobs that control how a disclosure is fetched/parsed.
+
+    `rules_json` is represented in-memory as a mapping (dict) when available.
+    """
 
     fetch_hint: str = "auto"
     parse_hint: str = "auto"
     pre_click_js: Optional[str] = None
-    rules_json: Optional[str] = None
+    rules_json: Optional[Dict[str, Any]] = None
 
 
 @dataclass(slots=True)

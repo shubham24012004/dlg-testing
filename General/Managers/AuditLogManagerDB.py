@@ -19,21 +19,21 @@ class AuditLogManagerDB:
     def record(self, entry: AuditLog) -> None:
         session = self.conn_factory.get_session()
         try:
-            # try to resolve legacy string lsp_id to numeric PK
+            # try to resolve non-numeric `lsp_id` to numeric PK
             resolved_lsp_id = None
-            legacy = None
+            identifier_str = None
             if entry.lsp_id is not None:
                 try:
                     resolved_lsp_id = int(entry.lsp_id)
-                except Exception:
-                    legacy = entry.lsp_id
-                    lm = session.query(LspMasterORM).filter_by(legacy_id=legacy).one_or_none()
+                except (ValueError, TypeError):
+                    identifier_str = entry.lsp_id
+                    # try resolving by name (identifier_str may be LSP name)
+                    lm = session.query(LspMasterORM).filter_by(name=identifier_str).one_or_none()
                     if lm:
                         resolved_lsp_id = lm.id
 
             db_entry = AuditLogORM(
                 lsp_id=resolved_lsp_id,
-                legacy_lsp_id=legacy,
                 auto_manual=entry.auto_manual,
                 user_id=entry.user_id,
                 payload=entry.payload or "",
@@ -52,19 +52,19 @@ class AuditLogManagerDB:
         try:
             for entry in entries:
                 resolved_lsp_id = None
-                legacy = None
+                identifier_str = None
                 if entry.lsp_id is not None:
                     try:
                         resolved_lsp_id = int(entry.lsp_id)
-                    except Exception:
-                        legacy = entry.lsp_id
-                        lm = session.query(LspMasterORM).filter_by(legacy_id=legacy).one_or_none()
+                    except (ValueError, TypeError):
+                        identifier_str = entry.lsp_id
+                        lm = session.query(LspMasterORM).filter_by(name=identifier_str).one_or_none()
                         if lm:
                             resolved_lsp_id = lm.id
 
                 db_entry = AuditLogORM(
                     lsp_id=resolved_lsp_id,
-                    legacy_lsp_id=legacy,
+                    
                     auto_manual=entry.auto_manual,
                     user_id=entry.user_id,
                     payload=entry.payload or "",

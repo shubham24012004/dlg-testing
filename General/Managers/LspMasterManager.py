@@ -1,35 +1,37 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import List
 
-import pandas as pd
-
+from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
+from DatabaseOperation.SQLAlchemy.DatabaseModels.orm_models import LspMasterORM, Base
 from DatabaseOperation.SQLAlchemy.DatabaseModels import LspMaster
-from utils import parse_bool
 
 
 class LspMasterManager:
     """Loads and filters ``lsp_master`` rows from CSV sources."""
 
-    def load_active(self, csv_path: str | Path) -> List[LspMaster]:
-        df = pd.read_csv(csv_path, dtype=str).fillna("")
-        masters: List[LspMaster] = []
-        for _, row in df.iterrows():
-            lsp_name = row.get("lsp_name", "").strip()
-            url = row.get("disclosure_url", "").strip()
-            if not lsp_name or not url:
-                continue
-            masters.append(
-                LspMaster(
-                    lsp_name=lsp_name,
-                    disclosure_url=url,
-                    is_active=parse_bool(row.get("is_active", "true")),
-                    fetch_hint=(row.get("fetch_hint", "auto").strip() or "auto"),
-                    parse_hint=(row.get("parse_hint", "auto").strip() or "auto"),
-                    rules_json=(row.get("rules_json", "").strip() or None),
-                    lsp_id=(row.get("lsp_id", "").strip() or lsp_name),
-                    home_url=(row.get("home_url", "").strip() or None),
+    def load_active(self) -> List[LspMaster]:
+        """Load active LSPs from the DB (compat shim for previous CSV loader)."""
+        cf = ConnectionFactory()
+        cf.create_all_tables(base=Base)
+        session = cf.get_session()
+        try:
+            rows = session.query(LspMasterORM).filter_by(active=True).all()
+            result: List[LspMaster] = []
+            for r in rows:
+                result.append(
+                    LspMaster(
+                        lsp_name=r.name,
+                        disclosure_url=r.home_url or "",
+                        is_active=bool(r.active),
+                        fetch_hint="auto",
+                        parse_hint="auto",
+                        rules_json=None,
+                        lsp_id=str(r.id),
+                        home_url=r.home_url,
+                        id=r.id,
+                    )
                 )
-            )
-        return [row for row in masters if row.is_active]
+            return result
+        finally:
+            session.close()

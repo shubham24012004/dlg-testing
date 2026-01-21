@@ -8,6 +8,8 @@ from DatabaseOperation.SQLAlchemy.DatabaseModels.orm_models import AuditAction, 
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.SQLAlchemy.DatabaseModels import LspMaster, DlgRaw, AuditLog
 from General.Managers.AuditLogManagerDB import AuditLogManagerDB
+from utils import parse_amount_any, parse_date_any, normalize_amount_to_crores
+import re
 
 class DlgCrawlerManagerDB:
     """Coordinates fetching, parsing, and persistence for DLG disclosures (DB version)."""
@@ -53,16 +55,16 @@ class DlgCrawlerManagerDB:
             for row in normalized_rows:
                 # resolve numeric PK for lsp_id
                 resolved_lsp_id = None
-                legacy = row.get("lsp_id") or source.lsp_id or source.lsp_name
+                identifier_str = row.get("lsp_id") or source.lsp_id or source.lsp_name
                 if row.get("lsp_id") is not None:
                     try:
                         resolved_lsp_id = int(row.get("lsp_id"))
                     except Exception:
-                        lm = session.query(LspMasterORM).filter_by(legacy_id=legacy).one_or_none()
+                        lm = session.query(LspMasterORM).filter_by(name=identifier_str).one_or_none()
                         if lm:
                             resolved_lsp_id = lm.id
                 if resolved_lsp_id is None:
-                    lm = session.query(LspMasterORM).filter_by(legacy_id=legacy).one_or_none()
+                    lm = session.query(LspMasterORM).filter_by(name=identifier_str).one_or_none()
                     if lm:
                         resolved_lsp_id = lm.id
 
@@ -85,17 +87,46 @@ class DlgCrawlerManagerDB:
                 if exists:
                     continue
 
+                # Coerce amount
+                amount_val = None
+                raw_amount = row.get("amount")
+                if raw_amount is not None:
+                    if isinstance(raw_amount, (int, float)):
+                        amount_val = float(raw_amount)
+                    else:
+                        parsed = parse_amount_any(raw_amount)
+                        if parsed is not None:
+                            amount_val = normalize_amount_to_crores(parsed)
+
+                # Heuristics: recover amount from portfolio/lender if needed
+                if amount_val is None and isinstance(portfolio, str) and re.search(r"\d", portfolio):
+                    parsed = parse_amount_any(portfolio)
+                    if parsed is not None:
+                        amount_val = normalize_amount_to_crores(parsed)
+                        portfolio = ""
+                if amount_val is None and isinstance(lender, str) and re.search(r"\d", lender):
+                    parsed = parse_amount_any(lender)
+                    if parsed is not None:
+                        amount_val = normalize_amount_to_crores(parsed)
+                        lender = ""
+
+                # Coerce date
+                if isinstance(as_on_ts, dt.datetime):
+                    as_on_ts_parsed = as_on_ts
+                else:
+                    as_on_ts_parsed = parse_date_any(as_on_ts)
+
                 db_row = DlgRawORM(
                     lsp_id=resolved_lsp_id,
                     lsp_name=row.get("lsp_name", source.lsp_name),
                     lender=lender,
                     portfolio=portfolio,
-                    amount=row.get("amount"),
-                    as_on_timestamp=as_on_ts,
+                    amount=amount_val,
+                    as_on_timestamp=as_on_ts_parsed,
                     scrape_timestamp=scrape_started_at,
                     complete=status,
                 )
-                session.add(db_row)
+                session.merge(db_row)
             session.commit()
         except Exception as e:
             session.rollback()
@@ -112,11 +143,11 @@ class DlgCrawlerManagerDB:
                 try:
                     resolved_lsp_id = int(source.lsp_id)
                 except Exception:
-                    lm = session.query(LspMasterORM).filter_by(legacy_id=source.lsp_id).one_or_none()
+                    lm = session.query(LspMasterORM).filter_by(name=source.lsp_id).one_or_none()
                     if lm:
                         resolved_lsp_id = lm.id
             if resolved_lsp_id is None:
-                lm = session.query(LspMasterORM).filter_by(legacy_id=source.lsp_name).one_or_none()
+                lm = session.query(LspMasterORM).filter_by(name=source.lsp_name).one_or_none()
                 if lm:
                     resolved_lsp_id = lm.id
 

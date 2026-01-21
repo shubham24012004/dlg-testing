@@ -16,7 +16,7 @@ from DatabaseOperation.SQLAlchemy.DatabaseModels import (
 from General.Managers.AuditLogManager import AuditLogManager
 from General.Managers.DlgCrawlerConfigManager import DlgCrawlerConfigManager
 from General.Managers.DlgRawManager import DlgRawManager
-from General.Managers.LspMasterManager import LspMasterManager
+from General.Managers.LspMasterManagerDB import LspMasterManagerDB as LspMasterManager
 from simple_ocr_extractor import extract_simple
 from utils import (
     extract_dlg_from_plain_text,
@@ -47,41 +47,8 @@ class DlgCrawlerManager:
         self.audit_manager = AuditLogManager()
 
     # ------------------------------------------------------------------
-    # Public API
+    # Public API (business logic lives in controller)
     # ------------------------------------------------------------------
-    def run(self, master_csv: str, raw_csv: str, limit: Optional[int] = None) -> None:
-        sources = self.lsp_manager.load_active(master_csv)
-        if limit:
-            sources = sources[:limit]
-
-        for source in sources:
-            scrape_started_at = dt.datetime.utcnow()
-            try:
-                status, *_rest, normalized_rows = self.scrape_one(source)
-                self._persist_rows(raw_csv, status, normalized_rows, source, scrape_started_at)
-                self.audit_manager.record(
-                    self.audit_manager.build(
-                        lsp_id=(source.lsp_id or source.lsp_name),
-                        action_taken=AuditAction.CRAWL,
-                        auto_manual="auto",
-                        user_id="system",
-                        payload=json.dumps({"status": status, "details": None, "ts": scrape_started_at.isoformat()}),
-                    )
-                )
-                print(f"[OK] {source.lsp_name} -> {status}")
-            except Exception as exc:  # pragma: no cover - operational safety
-                self._persist_error(raw_csv, source, scrape_started_at)
-                self.audit_manager.record(
-                    self.audit_manager.build(
-                        lsp_id=(source.lsp_id or source.lsp_name),
-                        action_taken=AuditAction.CRAWL,
-                        auto_manual="auto",
-                        user_id="system",
-                        payload=json.dumps({"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()}),
-                    )
-                )
-                print(f"[ERR] {source.lsp_name} -> Error ({str(exc)[:120]})")
-
     def scrape_one(self, source: LspMaster) -> Tuple[str, Optional[str], Optional[str], List[Dict[str, Any]]]:
         scrape_ts = dt.datetime.utcnow()
         config = self.config_manager.build(source)
@@ -135,9 +102,8 @@ class DlgCrawlerManager:
     # ------------------------------------------------------------------
     # Persistence helpers
     # ------------------------------------------------------------------
-    def _persist_rows(
+    def persist_rows(
         self,
-        raw_csv: str,
         status: str,
         normalized_rows: List[Dict[str, Any]],
         source: LspMaster,
@@ -147,7 +113,7 @@ class DlgCrawlerManager:
             dlg_rows = [dlg_raw_from_dict(row, status) for row in normalized_rows]
             for dlg_row in dlg_rows:
                 dlg_row.lsp_id = source.lsp_id or source.lsp_name
-            self.raw_manager.append(raw_csv, dlg_rows)
+            self.raw_manager.append(dlg_rows)
             return
 
         if status == "Missing":
@@ -161,9 +127,9 @@ class DlgCrawlerManager:
                 complete="Missing",
                 lsp_id=(source.lsp_id or source.lsp_name),
             )
-            self.raw_manager.append(raw_csv, [row])
+            self.raw_manager.append([row])
 
-    def _persist_error(self, raw_csv: str, source: LspMaster, scrape_ts: dt.datetime) -> None:
+    def persist_error(self, source: LspMaster, scrape_ts: dt.datetime) -> None:
         row = DlgRaw(
             lsp_name=source.lsp_name,
             lender=None,
@@ -174,7 +140,7 @@ class DlgCrawlerManager:
             complete="Error",
             lsp_id=(source.lsp_id or source.lsp_name),
         )
-        self.raw_manager.append(raw_csv, [row])
+        self.raw_manager.append([row])
 
     # ------------------------------------------------------------------
     # Fetching/parsing helpers
@@ -254,12 +220,27 @@ class DlgCrawlerManager:
     ) -> FetchResult:
         if not PLAYWRIGHT_AVAILABLE:
             raise RuntimeError("Playwright not installed/available. Install playwright to enable HTML->PDF rendering.")
+        from playwright.sync_api import TimeoutError as PWTimeout
         with sync_playwright() as context_manager:
             browser = context_manager.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
             context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=BROWSER_HEADERS)
             page = context.new_page()
             wait_mode = wait_until if wait_until in {"load", "domcontentloaded", "networkidle"} else "networkidle"
-            page.goto(url, wait_until=wait_mode, timeout=timeout_ms)
+            try:
+                page.goto(url, wait_until=wait_mode, timeout=timeout_ms)
+            except Exception as e:
+                # Retry with a more permissive strategy if initial navigation times out
+                try:
+                    if isinstance(e, PWTimeout) or 'Timeout' in str(e):
+                        # retry once using 'load' and a longer timeout
+                        page.goto(url, wait_until='load', timeout=max(timeout_ms * 2, 120000))
+                    else:
+                        raise
+                except Exception:
+                    context.close()
+                    browser.close()
+                    raise
+
             if pre_click_js:
                 page.evaluate(pre_click_js)
                 page.wait_for_timeout(2000)

@@ -3,30 +3,41 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+from db_activity_logger import setup_db_activity_logger
 
 from General.Controllers.DlgCrawlerController import DlgCrawlerController
 from General.Managers.LspMasterManagerDB import LspMasterManagerDB
 from General.Managers.DlgCrawlerConfigManagerDB import DlgCrawlerConfigManagerDB
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
-from DatabaseOperation.SQLAlchemy.DatabaseModels.orm_models import Base
+from DatabaseOperation.SQLAlchemy.DatabaseModels.orm_models import Base, LspMasterORM, DlgCrawlerConfigORM
+from DatabaseOperation.SQLAlchemy.DatabaseModels import LspMaster as LspMasterDC
+
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    APSCHEDULER_AVAILABLE = True
+except Exception:
+    APSCHEDULER_AVAILABLE = False
 
 # Load environment variables from .env file
 load_dotenv()
+
+# initialize DB activity logger
+setup_db_activity_logger()
 
 
 @dataclass(slots=True)
 class AppSettings:
     """Holds default paths and HTTP server knobs."""
 
-    master_csv: str = os.getenv("DLG_MASTER_CSV", "data\\lsp_sources_latest.csv")
-    raw_csv: str = os.getenv("DLG_RAW_CSV", "data\\dlg_raw_latest_v39.csv")
     host: str = os.getenv("DLG_FLASK_HOST", "0.0.0.0")
     port: int = int(os.getenv("DLG_FLASK_PORT", "5000"))
     debug: bool = os.getenv("DLG_FLASK_DEBUG", "0") in {"1", "true", "True"}
+        # CSV paths removed; DB is now source-of-truth
 
 
 settings = AppSettings()
@@ -42,39 +53,68 @@ lsp_db = LspMasterManagerDB(os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db"))
 config_db = DlgCrawlerConfigManagerDB(os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db"))
 
 
+def _joined_active_sources() -> List[LspMasterDC]:
+    """Return sources from an INNER JOIN of lsp_master and dlg_crawler_config.
+
+    Only active rows from both tables are included.
+    """
+    db_path = os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db")
+    cf = ConnectionFactory(db_path)
+    session = cf.get_session()
+    try:
+        rows = (
+            session.query(LspMasterORM, DlgCrawlerConfigORM)
+            .join(DlgCrawlerConfigORM, DlgCrawlerConfigORM.lsp_id == LspMasterORM.id)
+            .filter(LspMasterORM.active == True)  # noqa: E712
+            .filter(DlgCrawlerConfigORM.is_active == True)  # noqa: E712
+            .all()
+        )
+        result: List[LspMasterDC] = []
+        for lm, cfg in rows:
+            result.append(
+                LspMasterDC(
+                    lsp_name=lm.name,
+                    disclosure_url=cfg.dlg_url or lm.home_url or "",
+                    is_active=bool(lm.active),
+                    fetch_hint=cfg.fetch_hint or "auto",
+                    parse_hint=cfg.parse_hint or "auto",
+                    rules_json=cfg.rules_json,
+                    lsp_id=str(lm.id),
+                    home_url=lm.home_url,
+                    id=lm.id,
+                )
+            )
+        return result
+    finally:
+        session.close()
+
+
+def _run_cron_scrape() -> None:
+    limit = os.getenv("DLG_CRON_LIMIT")
+    limit_val = int(limit) if limit and str(limit).isdigit() else None
+    sources = _joined_active_sources()
+    controller.run_scrape_sources(sources, limit=limit_val)
+
+
 @app.get("/healthz")
 def healthcheck() -> Any:
     return jsonify({
         "status": "ok",
-        "default_master_csv": settings.master_csv,
-        "default_raw_csv": settings.raw_csv,
+            "message": "OK",
     })
 
 
 @app.post("/scrape")
 def trigger_scrape() -> Any:
     payload: Dict[str, Any] = request.get_json(silent=True) or {}
-    master_csv = payload.get("master_csv") or settings.master_csv
-    raw_csv = payload.get("raw_csv") or settings.raw_csv
     limit = payload.get("limit")
-
+    lsp_id = payload.get("lsp_id")
     try:
-        controller.run_scrape(master_csv, raw_csv, limit)
+        controller.run_scrape(limit=limit, lsp_id=lsp_id)
     except Exception as exc:  # pragma: no cover - exposed to caller
-        return (
-            jsonify({
-                "status": "error",
-                "message": str(exc),
-            }),
-            500,
-        )
+        return jsonify({"status": "error", "message": str(exc)}), 500
 
-    return jsonify({
-        "status": "ok",
-        "master_csv": master_csv,
-        "raw_csv": raw_csv,
-        "limit": limit,
-    })
+    return jsonify({"status": "ok", "limit": limit, "lsp_id": lsp_id})
 
 
 @app.post("/api/lsp_master")
@@ -158,7 +198,7 @@ def api_list_lsp_master() -> Any:
     session = cf.get_session()
     try:
         rows = session.query(LspMasterORM).limit(1000).all()
-        results = [ {"id": r.id, "legacy_id": getattr(r, 'legacy_id', None), "name": r.name, "home_url": r.home_url, "active": r.active} for r in rows ]
+        results = [ {"id": r.id, "name": r.name, "home_url": r.home_url, "active": r.active} for r in rows ]
     finally:
         session.close()
     return jsonify({"status": "ok", "count": len(results), "rows": results})
@@ -189,12 +229,12 @@ def api_delete_lsp_master(lsp_id: str) -> Any:
     cf = ConnectionFactory(db_path)
     session = cf.get_session()
     try:
-        # allow either numeric id or legacy string id in the route
+        # allow either numeric id or LSP name in the route
         try:
             int_id = int(lsp_id)
             lm = session.query(LspMasterORM).filter_by(id=int_id).one_or_none()
         except Exception:
-            lm = session.query(LspMasterORM).filter_by(legacy_id=lsp_id).one_or_none()
+            lm = session.query(LspMasterORM).filter_by(name=lsp_id).one_or_none()
         if not lm:
             return jsonify({"status": "error", "message": "not found"}), 404
         # delete config if exists
@@ -220,12 +260,12 @@ def api_delete_dlg_crawler_config(lsp_id: str) -> Any:
     cf = ConnectionFactory(db_path)
     session = cf.get_session()
     try:
-        # accept numeric id or legacy string id
+        # accept numeric id or LSP name
         try:
             int_id = int(lsp_id)
             cfg = session.query(DlgCrawlerConfigORM).filter_by(lsp_id=int_id).one_or_none()
         except Exception:
-            lm = session.query(LspMasterORM).filter_by(legacy_id=lsp_id).one_or_none()
+            lm = session.query(LspMasterORM).filter_by(name=lsp_id).one_or_none()
             if not lm:
                 return jsonify({"status": "error", "message": "not found"}), 404
             cfg = session.query(DlgCrawlerConfigORM).filter_by(lsp_id=lm.id).one_or_none()
@@ -242,6 +282,17 @@ def api_delete_dlg_crawler_config(lsp_id: str) -> Any:
 
 
 def main() -> None:
+    # Start scheduler only once (avoid Flask reloader double-start)
+    if os.getenv("DLG_CRON_ENABLED", "0") in {"1", "true", "True"}:
+        if not APSCHEDULER_AVAILABLE:
+            raise RuntimeError("APScheduler not installed; add it to requirements.txt")
+        if not settings.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            cron_expr = os.getenv("DLG_CRON", "0 * * * *")  # default: top of every hour
+            timezone = os.getenv("DLG_CRON_TZ", "UTC")
+            scheduler = BackgroundScheduler(timezone=timezone)
+            scheduler.add_job(_run_cron_scrape, CronTrigger.from_crontab(cron_expr))
+            scheduler.start()
+
     app.run(host=settings.host, port=settings.port, debug=settings.debug)
 
 
