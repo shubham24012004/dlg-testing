@@ -1,6 +1,6 @@
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
-from DatabaseOperation.SQLAlchemy.DatabaseModels import FetchResult
+from DatabaseOperation.DatabaseModels import FetchResult
 
 
 BROWSER_USER_AGENT = (

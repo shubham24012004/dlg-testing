@@ -5,7 +5,7 @@ import datetime as dt
 from bs4 import BeautifulSoup
 from dateutil import parser as dateparser
 from typing import Any, Dict, List, Optional, Tuple
-from DatabaseOperation.SQLAlchemy.DatabaseModels import FetchResult
+from DatabaseOperation.DatabaseModels import FetchResult
 import pdfplumber
 
 
