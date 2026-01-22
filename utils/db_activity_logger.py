@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from logging.handlers import RotatingFileHandler
 
 from sqlalchemy import event
 from sqlalchemy.inspection import inspect as sa_inspect
@@ -18,24 +16,13 @@ from sqlalchemy.orm import Session as SessionClass
 from DatabaseOperation.SQLAlchemy.DatabaseModels.orm_models import Base
 
 
-LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
-LOG_FILE = os.path.abspath(os.path.join(LOG_DIR, "db_activity.log"))
-
-
-def _ensure_log_dir() -> None:
-    os.makedirs(LOG_DIR, exist_ok=True)
-
-
 def get_logger() -> logging.Logger:
-    logger = logging.getLogger("dlg.db")
-    if not logger.handlers:
-        _ensure_log_dir()
-        handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
-        fmt = "%(asctime)s %(levelname)s %(message)s"
-        handler.setFormatter(logging.Formatter(fmt))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-    return logger
+    """Return the pre-configured DB activity logger.
+    
+    Logger is configured by utils.logger_config.setup_logging().
+    This function just returns the existing logger instance.
+    """
+    return logging.getLogger("dlg.db")
 
 
 def _format_pk(target) -> str:
