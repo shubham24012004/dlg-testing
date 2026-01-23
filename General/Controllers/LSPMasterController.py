@@ -15,15 +15,29 @@ class LSPMasterController:
 
     def handle_list_lsp_master(self, request: Request) -> Tuple[Dict[str, Any], int]:
         """Handle LSP master list request."""
-        results = self.list_lsp_masters_dict(limit=1000)
-        return {"status": "ok", "count": len(results), "rows": results}, 200
+        try:
+            results = self.list_lsp_masters_dict(limit=1000)
+            self.logger.info("Listed LSP Master records: %d", len(results))
+            return {"status": "ok", "count": len(results), "rows": results}, 200
+        except Exception as exc:
+            self.logger.error("Error listing LSP Master records: %s", str(exc), exc_info=True)
+            return {"status": "error", "message": str(exc)}, 500
 
     def handle_get_lsp_master(self, lsp_id: int) -> Tuple[Dict[str, Any], int]:
-        """Handle get single LSP master request."""
-        lsp = self.get_lsp_master_dict(lsp_id)
-        if not lsp:
-            return {"status": "error", "message": "not found"}, 404
-        return {"status": "ok", "lsp": lsp}, 200
+        try:
+
+            """Handle get single LSP master request."""
+            lsp = self.get_lsp_master_dict(lsp_id)
+
+            if not lsp:
+                self.logger.warning("LSP Master record with ID %d not found", lsp_id)
+                return {"status": "error", "message": "not found"}, 404
+            self.logger.info("Retrieved LSP Master record with ID %d", lsp_id)
+            return {"status": "ok", "lsp": lsp}, 200
+        
+        except Exception as exc:
+            self.logger.error("Error retrieving LSP Master record: %s", str(exc), exc_info=True)
+            return {"status": "error", "message": str(exc)}, 500
 
     def handle_update_lsp_master(self, id: int, request: Request) -> Tuple[Dict[str, Any], int]:
         """Handle LSP master update request."""
@@ -34,7 +48,9 @@ class LSPMasterController:
         try:
             lsp = self.update_lsp_master_dict(id, payload)
             if not lsp:
+                self.logger.warning("LSP Master record with ID %d not found for update", id)
                 return {"status": "error", "message": "not found"}, 404
+            self.logger.info("Updated LSP Master record with ID %d", id)
             return {"status": "ok", "lsp": lsp}, 200
         except Exception as exc:
             self.logger.error("Error updating LSP master: %s", str(exc), exc_info=True)
@@ -45,7 +61,9 @@ class LSPMasterController:
         try:
             deleted = self.lsp_service.delete(int(lsp_id))
             if not deleted:
+                self.logger.warning("LSP Master record with ID %s not found for deletion", lsp_id)
                 return {"status": "error", "message": "not found"}, 404
+            self.logger.info("Deleted LSP Master record with ID %s", lsp_id)
             return {"status": "ok", "deleted": lsp_id}, 200
         except Exception as exc:
             self.logger.error("Error deleting LSP master: %s", str(exc), exc_info=True)

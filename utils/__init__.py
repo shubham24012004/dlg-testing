@@ -10,7 +10,7 @@ import os
 import sys
 
 # load the sibling utils.py as a module named _utils_module
-_parent_utils_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "utils.py"))
+_parent_utils_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "utils/utils.py"))
 _spec = importlib.util.spec_from_file_location("_utils_module", _parent_utils_path)
 _utils_mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_utils_mod)

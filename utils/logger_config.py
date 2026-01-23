@@ -3,7 +3,7 @@ import os
 
 
 def logger_method(name):
-    if os.environ["environment"] == 'dev':
+    if os.getenv("environment") == 'dev':
         # Create and configure logger
         logging.basicConfig(filename="logger.log",
                             level=logging.DEBUG,

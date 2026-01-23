@@ -3,9 +3,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from utils.logger_config import logger_method
 
 from utils.content_fetchers import BROWSER_HEADERS, BROWSER_USER_AGENT, fetch_with_requests
-from DatabaseOperation.DatabaseModels.orm_models import FetchResult, LspMaster, dlg_raw_from_dict, DlgRaw
+from DatabaseOperation.DatabaseModels.orm_models import FetchResult, LspMaster, DlgRaw
 from General.Managers.DlgCrawlerManager import DlgCrawlerManager
 from utils.simple_ocr_extractor import extract_simple
+
 from utils.utils import (
     extract_dlg_from_plain_text,
     extract_finsall_grand_total,
@@ -194,6 +195,17 @@ class DlgCrawlerService:
             lsp_id=(source.lsp_id or source.lsp_name),
         )
         self.crawler_manager.append([row])
+
+    def dlg_raw_from_dict(self, data: Dict[str, Any], status: str) -> DlgRaw:
+        return DlgRaw(
+            lsp_name=data.get("lsp_name"),
+            lender=data.get("lender"),
+            portfolio=data.get("portfolio"),
+            amount=data.get("amount"),
+            as_on_timestamp=data.get("as_on_timestamp"),
+            scrape_timestamp=data.get("scrape_timestamp"),
+            complete=status
+        )
 
     # ------------------------------------------------------------------
     # Fetching/parsing helpers

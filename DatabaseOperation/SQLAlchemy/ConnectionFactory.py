@@ -12,9 +12,14 @@ class ConnectionFactory:
     """Provides SQLAlchemy engine and session for SQLite."""
 
     def __init__(self, db_path=None):
-        if db_path is None:
-            db_path = os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db")
-        self.engine = create_engine(f"sqlite:///{db_path}", echo=False, future=True)
+        db_url = os.getenv("DATABASE_URL")
+        if db_url:
+            # Use PostgreSQL or other database
+            self.engine = create_engine(db_url, echo=False, future=True)
+        else:
+            if db_path is None:
+                db_path = os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db")
+            self.engine = create_engine(f"sqlite:///{db_path}", echo=False, future=True)
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
 
     def get_session(self):
