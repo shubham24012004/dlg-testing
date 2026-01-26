@@ -1,124 +1,114 @@
-from typing import Any, Dict, List, Optional, Tuple
-
+from http import HTTPStatus
 from utils.logger_config import logger_method
-from flask import Request
+from flask import request, jsonify, Blueprint
 
 from General.Service.LspMasterService import LSPMasterService
+from DatabaseOperation.DatabaseModels.orm_models import LspMasterIp, LspMaster
+
+"""Controller for API operations with business logic."""
+
+lsp_master_bp = Blueprint('lsp_master_bp', __name__)
+
+logger = logger_method(__name__)
+lsp_service = LSPMasterService()
 
 
-class LSPMasterController:
-    """Controller for API operations with business logic."""
+@lsp_master_bp.get("/api/lsp_master")
+def handle_list_lsp_master():
+    """Handle LSP master list request."""
+    try:
+        active = request.args.get('active', default=True, type=bool)
+        page = request.args.get('page', default=1, type=int)
+        per_page = request.args.get('per_page', default=10, type=int)
+        lsp_id = request.args.get('lsp_id', default=0, type=int)
+        lsp_name = request.args.get('lsp_name', default="", type=str)
 
-    def __init__(self):
-        self.logger = logger_method(__name__)
-        self.lsp_service = LSPMasterService()
+        results, rows = lsp_service.list_lsp_master(active_only=active, page=page, per_page=per_page, lsp_id=lsp_id,
+                                                    lsp_name=lsp_name)
+        logger.info(f"Fetched LSP Master records: {rows}")
+        if rows > 0:
+            return jsonify({"statusCode": HTTPStatus.OK, "message": "LSP fetched successfully", "data": results,
+                            "count": rows})
+        else:
+            logger.info(f"LSP Master record not found")
+            return jsonify(
+                {"statusCode": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'})
+    except Exception as exc:
+        logger.critical(f"Error listing LSP Master records: {str(exc)}", exc_info=True)
+        return jsonify(
+            {"statusCode": HTTPStatus.INTERNAL_SERVER_ERROR, "message": str(exc)})
 
-    def handle_list_lsp_master(self, request: Request) -> Tuple[Dict[str, Any], int]:
-        """Handle LSP master list request."""
-        try:
-            results = self.list_lsp_masters_dict(limit=1000)
-            self.logger.info("Listed LSP Master records: %d", len(results))
-            return {"status": "ok", "count": len(results), "rows": results}, 200
-        except Exception as exc:
-            self.logger.error("Error listing LSP Master records: %s", str(exc), exc_info=True)
-            return {"status": "error", "message": str(exc)}, 500
 
-    def handle_get_lsp_master(self, lsp_id: int) -> Tuple[Dict[str, Any], int]:
-        try:
+@lsp_master_bp.post("/api/lsp_master")
+def handle_new_lsp_master():
+    """Handle LSP master update request."""
+    payload = request.get_json(silent=True)
+    if not payload:
+        return jsonify(
+            {"statusCode": HTTPStatus.BAD_REQUEST, "message": 'No Data found'})
 
-            """Handle get single LSP master request."""
-            lsp = self.get_lsp_master_dict(lsp_id)
-
-            if not lsp:
-                self.logger.warning("LSP Master record with ID %d not found", lsp_id)
-                return {"status": "error", "message": "not found"}, 404
-            self.logger.info("Retrieved LSP Master record with ID %d", lsp_id)
-            return {"status": "ok", "lsp": lsp}, 200
-        
-        except Exception as exc:
-            self.logger.error("Error retrieving LSP Master record: %s", str(exc), exc_info=True)
-            return {"status": "error", "message": str(exc)}, 500
-
-    def handle_update_lsp_master(self, id: int, request: Request) -> Tuple[Dict[str, Any], int]:
-        """Handle LSP master update request."""
-        payload = request.get_json(silent=True)
-        if not payload:
-            return {"status": "error", "message": "empty payload"}, 400
-
-        try:
-            lsp = self.update_lsp_master_dict(id, payload)
-            if not lsp:
-                self.logger.warning("LSP Master record with ID %d not found for update", id)
-                return {"status": "error", "message": "not found"}, 404
-            self.logger.info("Updated LSP Master record with ID %d", id)
-            return {"status": "ok", "lsp": lsp}, 200
-        except Exception as exc:
-            self.logger.error("Error updating LSP master: %s", str(exc), exc_info=True)
-            return {"status": "error", "message": str(exc)}, 500
-
-    def handle_delete_lsp_master(self, lsp_id: str) -> Tuple[Dict[str, Any], int]:
-        """Handle LSP master delete request."""
-        try:
-            deleted = self.lsp_service.delete(int(lsp_id))
-            if not deleted:
-                self.logger.warning("LSP Master record with ID %s not found for deletion", lsp_id)
-                return {"status": "error", "message": "not found"}, 404
-            self.logger.info("Deleted LSP Master record with ID %s", lsp_id)
-            return {"status": "ok", "deleted": lsp_id}, 200
-        except Exception as exc:
-            self.logger.error("Error deleting LSP master: %s", str(exc), exc_info=True)
-            return {"status": "error", "message": str(exc)}, 500
-
-    # ==================== LspMaster Operations ====================
-
-    def get_lsp_master_dict(self, lsp_id: int) -> Optional[Dict[str, Any]]:
-        """Get LSP master as dictionary.
-        
-        Args:
-            lsp_id: LSP ID
-            
-        Returns:
-            Dictionary with LSP data or None if not found
-        """
-        lsp = self.lsp_service.get_lsp_master(lsp_id)
+    try:
+        # typecast payload to lspMasterIp
+        lsp_master_ip = LspMasterIp(**payload)
+        lsp = lsp_service.insert(lsp_master_ip)
         if not lsp:
-            return None
-        return {
-            "id": lsp.id,
-            "name": lsp.name,
-            "home_url": lsp.home_url,
-            "active": lsp.active,
-        }
+            message = f"Could not insert New LSP {payload}. LSP already exists"
+            logger.error(message)
+            return jsonify(
+                {"statusCode": HTTPStatus.INTERNAL_SERVER_ERROR, "message": message})
+        else:
+            # todo
+            # if lsp.dlg_url:
+            #     in return message show value to user for confirming
+            # else"
+            #     in return message inform dlg not found
+            logger.info(f"Inserted LSP Master record {lsp_master_ip.lsp_name}")
+            return jsonify(
+                {"statusCode": HTTPStatus.OK, "message": "LSP data added successfully", "data": lsp, "count": 1})
+    except Exception as exc:
+        logger.critical(f"Error inserting LSP master: {str(exc)} {payload}", exc_info=True)
+        return jsonify(
+            {"statusCode": HTTPStatus.BAD_REQUEST, "message": str(exc)})
 
-    def list_lsp_masters_dict(self, limit: int = 1000) -> List[Dict[str, Any]]:
-        """List LSP masters as dictionaries.
-        
-        Args:
-            limit: Maximum records to return
-            
-        Returns:
-            List of dictionaries with LSP data
-        """
-        rows = self.lsp_service.list_lsp_master(limit=limit)
-        return [
-            {"id": r.id, "name": r.name, "home_url": r.home_url, "active": r.active}
-            for r in rows
-        ]
 
-    def update_lsp_master_dict(self, id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Update LSP master and return as dictionary.
-        
-        Args:
-            id: LSP ID
-            data: Dictionary with update fields
-            
-        Returns:
-            Updated LSP dictionary or None if not found
-        """
-        lsp = self.lsp_service.update(data)
+@lsp_master_bp.put("/api/lsp_master/")
+def handle_update_lsp_master():
+    """Handle LSP master update request."""
+    payload = request.get_json(silent=True)
+    if not payload:
+        return jsonify(
+            {"statusCode": HTTPStatus.BAD_REQUEST, "message": 'Missing input Payload'})
+
+    try:
+        lsp_master = LspMaster(**payload)
+        lsp = lsp_service.update(lsp_master)
         if not lsp:
-            return None
-        return lsp
+            logger.warning(f"LSP Master record not found for update")
+            return jsonify(
+                {"statusCode": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'})
+        logger.info(f"Updated LSP Master record with ID {lsp.id}")
+        return jsonify(
+            {"statusCode": HTTPStatus.OK, "message": "LSP data updated successfully", "data": lsp, "count": 1})
+    except Exception as exc:
+        logger.critical(f"Error updating LSP master: {str(exc)}", exc_info=True)
+        return jsonify(
+            {"statusCode": HTTPStatus.BAD_REQUEST, "message": str(exc)})
 
 
-__all__ = ["LSPMasterController"]
+@lsp_master_bp.delete("/api/lsp_master/")
+def handle_delete_lsp_master():
+    """Handle LSP master delete request."""
+    try:
+        lsp_id = request.args.get('lsp_id', default=0, type=int)
+        deleted = lsp_service.delete(lsp_id)
+        if deleted <= 0:
+            logger.warning(f"LSP Master record with ID {lsp_id} not found for deletion")
+            return jsonify(
+                {"statusCode": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'})
+        logger.info(f"Deleted LSP Master record with ID {lsp_id}")
+        return jsonify(
+            {"statusCode": HTTPStatus.OK, "message": 'LSP Deleted'})
+    except Exception as exc:
+        logger.critical(f"Error deleting LSP master: {str(exc)}", exc_info=True)
+        return jsonify(
+            {"statusCode": HTTPStatus.BAD_REQUEST, "message": str(exc)})

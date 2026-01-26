@@ -38,12 +38,12 @@ class LspMaster(Base):
     __table_args__ = {'schema': 'dlg'}
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
-    home_url = Column(String)
+    home_url = Column(String, nullable=False)
     active = Column(Boolean, default=True)
-    dlg_url = Column(String, nullable=False)
+    dlg_url = Column(String)
     parse_hint = Column(String, default="auto")
     fetch_hint = Column(String, default="auto")
-    rules_json = Column(JSON)
+    rules_json = Column(JSON, default='{}')
     last_crawl_date = Column(TIMESTAMP(timezone=True))
 
 

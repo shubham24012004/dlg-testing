@@ -7,13 +7,63 @@ from dateutil import parser as dateparser
 from typing import Any, Dict, List, Optional, Tuple
 from DatabaseOperation.DatabaseModels import FetchResult
 import pdfplumber
+import requests
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+try:  # pragma: no cover - optional dependency
+    from playwright.sync_api import sync_playwright
+
+    PLAYWRIGHT_AVAILABLE = True
+except Exception:
+    PLAYWRIGHT_AVAILABLE = False
+
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+
+BROWSER_HEADERS = {
+    "User-Agent": BROWSER_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+}
 
 
-# -----------------------------
-# PARSE HELPERS
-# -----------------------------
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=12))
+def fetch_with_requests(url: str, timeout: int = 40) -> FetchResult:
+    r = requests.get(url, headers=BROWSER_HEADERS, timeout=timeout, allow_redirects=True)
+    ct = r.headers.get("content-type", "") or ""
+    return FetchResult(url=url, status_code=r.status_code, content_type=ct, body=r.content,
+                       fetch_mode_used="requests")
 
-# noinspection PyArgumentList
+
+def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
+                          pre_click_js: str | None = None) -> FetchResult:
+    if not PLAYWRIGHT_AVAILABLE:
+        raise RuntimeError("Playwright not installed/available. Install playwright to scrape JS-rendered pages.")
+    header_overrides = {k: v for k, v in BROWSER_HEADERS.items() if k.lower() != "user-agent"}
+    with sync_playwright() as context_manager:
+        browser = context_manager.chromium.launch(headless=True,
+                                                  args=["--disable-blink-features=AutomationControlled"])
+        context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=header_overrides)
+        page = context.new_page()
+        page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+        if pre_click_js:
+            page.evaluate(pre_click_js)
+            page.wait_for_timeout(2000)
+        html = page.content().encode("utf-8", errors="ignore")
+        context.close()
+        browser.close()
+        return FetchResult(
+            url=url,
+            status_code=200,
+            content_type="text/html; charset=utf-8",
+            body=html,
+            fetch_mode_used="playwright",
+        )
+
+
 def _clean_html_to_text(html: bytes) -> str:
     soup = BeautifulSoup(html, "html.parser")
     # drop script/style
@@ -69,12 +119,12 @@ def normalize_amount_to_crores(amount: Optional[float]) -> Optional[float]:
     """
     if amount is None:
         return None
-    
+
     # If amount is >= 100,000 (1 lakh crores, highly unlikely), assume it's in full rupees
     # 1 crore = 10,000,000 rupees
     if amount >= 100000:
         return round(amount / 10000000, 2)
-    
+
     # Otherwise, assume it's already in crores
     return amount
 
@@ -114,11 +164,11 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                 if not tbl or len(tbl) < 2:
                     continue
                 header = [str(x).strip() if x else "" for x in tbl[0]]
-                
+
                 # If headers have duplicates or empties, use col_0, col_1, col_2 instead
                 if len(header) != len(set(h for h in header if h)) or any(not h for h in header):
                     header = [f"col_{i}" for i in range(len(header))]
-                
+
                 for r in tbl[1:]:
                     vals = [str(x).strip() if x else "" for x in r]
                     if not any(v.strip() for v in vals):
@@ -182,18 +232,18 @@ def extract_from_html_tables(fetch: FetchResult) -> List[Dict[str, Any]]:
         # Check for thead with th elements (not wrapped in tr)
         thead = t.find("thead")
         headers = None
-        
+
         if thead:
             # Headers in thead (may or may not be in a tr)
             # Check for both th and td elements (some tables use td with bold text for headers)
             th_elements = thead.find_all(["th", "td"])
             if th_elements:
                 headers = [th.get_text(separator=" ", strip=True) for th in th_elements]
-        
+
         # Get data rows from tbody or all tr elements
         tbody = t.find("tbody")
         trs = tbody.find_all("tr") if tbody else t.find_all("tr")
-        
+
         if len(trs) < 1:
             continue
 
@@ -216,12 +266,12 @@ def extract_from_html_tables(fetch: FetchResult) -> List[Dict[str, Any]]:
 
         if len(trs) < 1:
             continue
-        
+
         # If no headers from thead, try to detect from first tr
         if not headers:
             first_row_cells = trs[0].find_all(["th", "td"])
             potential_headers = [c.get_text(separator=" ", strip=True) for c in first_row_cells]
-            
+
             # Check if first row is actually a header (has th tags or non-numeric content)
             has_th = len(trs[0].find_all("th")) > 0
             # UniOrbit has a header row with all <td>s, so we need a more robust check
@@ -229,16 +279,16 @@ def extract_from_html_tables(fetch: FetchResult) -> List[Dict[str, Any]]:
             is_header_row = has_th or (potential_headers and not all(
                 h.replace('.', '').replace(',', '').replace('-', '').replace('₹', '').strip().isdigit() for h in
                 potential_headers if h.strip()))
-            
+
             if is_header_row and any(potential_headers):
                 headers = potential_headers
                 trs = trs[1:]  # Skip the header row
-        
+
         # If still no headers, use column indices
         if not headers:
             num_cols = len(trs[0].find_all(["td", "th"])) if trs else 0
             headers = [f"col_{i}" for i in range(num_cols)]
-        
+
         span_buffers = [None] * len(headers)
 
         # Extract data rows
@@ -296,6 +346,53 @@ def extract_from_html_tables(fetch: FetchResult) -> List[Dict[str, Any]]:
     return rows
 
 
+def render_url_to_pdf(url: str,
+                      timeout_ms: int = 60_000,
+                      wait_ms: int = 0,
+                      wait_until: str = "networkidle",
+                      pre_click_js: Optional[str] = None,
+                      ) -> FetchResult:
+    if not PLAYWRIGHT_AVAILABLE:
+        raise RuntimeError("Playwright not installed/available. Install playwright to enable HTML->PDF rendering.")
+    from playwright.sync_api import TimeoutError as PWTimeout
+    with sync_playwright() as context_manager:
+        browser = context_manager.chromium.launch(headless=True,
+                                                  args=["--disable-blink-features=AutomationControlled"])
+        context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=BROWSER_HEADERS)
+        page = context.new_page()
+        wait_mode = wait_until if wait_until in {"load", "domcontentloaded", "networkidle"} else "networkidle"
+        try:
+            page.goto(url, wait_until=wait_mode, timeout=timeout_ms)
+        except Exception as e:
+            # Retry with a more permissive strategy if initial navigation times out
+            try:
+                if isinstance(e, PWTimeout) or 'Timeout' in str(e):
+                    # retry once using 'load' and a longer timeout
+                    page.goto(url, wait_until='load', timeout=max(timeout_ms * 2, 120000))
+                else:
+                    raise
+            except Exception:
+                context.close()
+                browser.close()
+                raise
+
+        if pre_click_js:
+            page.evaluate(pre_click_js)
+            page.wait_for_timeout(2000)
+        if wait_ms:
+            page.wait_for_timeout(wait_ms)
+        pdf_bytes = page.pdf(format="A4", print_background=True, prefer_css_page_size=True)
+        context.close()
+        browser.close()
+        return FetchResult(
+            url=url,
+            status_code=200,
+            content_type="application/pdf",
+            body=pdf_bytes,
+            fetch_mode_used="playwright-pdf",
+        )
+
+
 def extract_dlg_from_plain_text(
         html: bytes,
         lsp_name: str,
@@ -312,20 +409,20 @@ def extract_dlg_from_plain_text(
         scrape_ts = dt.datetime.utcnow()
 
     text = _clean_html_to_text(html)
-    
+
     # Check if rules specify regex-based extraction
     if rules_json:
         try:
             rules = json.loads(rules_json) if isinstance(rules_json, str) else rules_json
             field_map = rules.get("field_map", {})
-            
+
             # Check if all fields use regex (regex-based extraction mode)
             uses_regex = all(
                 isinstance(field_map.get(f), dict) and "regex" in field_map.get(f, {})
                 for f in ["lender", "portfolio", "amount"]
                 if f in field_map
             )
-            
+
             if uses_regex:
                 return extract_from_regex_patterns(text, lsp_name, scrape_ts, rules)
         except:
@@ -391,15 +488,15 @@ def extract_from_regex_patterns(
     """
     field_map = rules.get("field_map", {})
     as_on_config = field_map.get("as_on", {})
-    
+
     # Get regex patterns
     lender_pattern = field_map.get("lender", {}).get("regex")
     portfolio_pattern = field_map.get("portfolio", {}).get("regex")
     amount_pattern = field_map.get("amount", {}).get("regex")
-    
+
     if not all([lender_pattern, portfolio_pattern, amount_pattern]):
         return []
-    
+
     # Parse constant date if provided
     as_on_date = None
     if isinstance(as_on_config, dict) and "constant" in as_on_config:
@@ -407,35 +504,35 @@ def extract_from_regex_patterns(
             as_on_date = dateparser.parse(as_on_config["constant"])
         except:
             pass
-    
+
     lines = text.splitlines()
     current_lender = None
     rows = []
-    
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
-        
+
         # Try to match lender
         lender_match = re.search(lender_pattern, line, re.IGNORECASE)
         if lender_match:
             current_lender = lender_match.group(1).strip()
             continue
-        
+
         # Try to match portfolio and amount
         portfolio_match = re.search(portfolio_pattern, line, re.IGNORECASE)
         amount_match = re.search(amount_pattern, line, re.IGNORECASE)
-        
+
         if portfolio_match and amount_match:
             portfolio = portfolio_match.group(1).strip()
             amount_str = amount_match.group(1).strip()
-            
+
             try:
                 amount = float(amount_str.replace(',', ''))
             except:
                 continue
-            
+
             rows.append({
                 "LSP Name": lsp_name,
                 "Lender": current_lender,
@@ -444,7 +541,7 @@ def extract_from_regex_patterns(
                 "AsOnTimestamp": as_on_date,
                 "ScrapeTimestamp": scrape_ts
             })
-    
+
     return rows
 
 
@@ -667,15 +764,15 @@ def normalize_rows(
 
     def get_field(raw_row: Dict[str, Any], fname: str) -> Optional[str]:
         spec = field_map.get(fname)
-        
+
         # Handle simple string mapping like "portfolio": "Portfolio"
         if isinstance(spec, str):
             return pick_by_keys(raw_row, [spec])
-        
+
         # Handle dict-based spec
         if not isinstance(spec, dict):
             spec = {}
-            
+
         if "constant" in spec and spec["constant"] is not None:
             return str(spec["constant"]).strip()
         keys = spec.get("keys") or defaults[fname]
@@ -717,22 +814,22 @@ def normalize_rows(
 
             # Override LSP Name with the one from configuration (handles cases like CreditVidya on prefr.com)
             # This ensures the data is saved under the correct company name from lsp_sources_latest.csv
-            
+
             # Clean up lender/portfolio: convert None to actual None, not string "None"
             lender_clean = None
             if lender_txt is not None:
                 lender_str = str(lender_txt).strip()
                 if lender_str and lender_str != "None":
                     lender_clean = lender_str
-            
+
             portfolio_clean = None
             if portfolio_txt is not None:
                 portfolio_str = str(portfolio_txt).strip()
                 if portfolio_str and portfolio_str != "None":
                     portfolio_clean = portfolio_str
-            
+
             ason = parse_date_any(ason_txt)
-        
+
         # Detect explicit total rows from raw data (e.g., columns labelled "Grand Total")
         raw_is_total = any(
             isinstance(val, str) and re.search(r"\btotal\b", val, flags=re.IGNORECASE)
@@ -757,7 +854,7 @@ def normalize_rows(
         # Skip rows where we have all None except date/scrape timestamp
         if row["Lender"] is None and row["Portfolio"] is None and row["Amount"] is None:
             continue
-        
+
         # Skip rows where we have amount but no portfolio (likely bad extraction from CIN or other non-table text)
         if row["Portfolio"] is None and row["Amount"] is not None and row["Lender"] is None:
             continue
@@ -782,7 +879,7 @@ def normalize_rows(
         deduped.append(r)
 
     final_data = merge_partial_rows(deduped)
-    
+
     # Apply forward fill if specified in rules
     forward_fill_cols = rules.get("forward_fill") or []
     if forward_fill_cols:
@@ -803,30 +900,30 @@ def is_header_row(row: Dict[str, Any]) -> bool:
     portfolio = row.get("Portfolio")
     lender = row.get("Lender")
     amount = row.get("Amount")
-    
+
     if not portfolio:
         return False
-    
+
     portfolio_lower = str(portfolio).lower().strip()
-    
+
     # Exact match header keywords (must be exact match, not just contain)
     exact_header_keywords = [
         "portfolio", "lender", "amount", "outstanding", "aum", "dlg",
         "name", "partner", "regulated entity", "business segment",
-        "cohort", "set", "total no", "s.no", "s no", "serial", "sr", 
+        "cohort", "set", "total no", "s.no", "s no", "serial", "sr",
         "particulars", "portfolio name", "lender name"
     ]
-    
+
     # Check if portfolio field is exactly a header keyword
     if portfolio_lower in exact_header_keywords:
         return True
-    
+
     # Check if lender field is also exactly a header keyword
     if lender:
         lender_lower = str(lender).lower().strip()
         if lender_lower in exact_header_keywords:
             return True
-    
+
     return False
 
 
@@ -837,23 +934,23 @@ def is_total_row(row: Dict[str, Any]) -> bool:
     """
     portfolio = row.get("Portfolio")
     lender = row.get("Lender")
-    
+
     if not portfolio:
         return False
-    
+
     portfolio_lower = str(portfolio).lower().strip()
-    
+
     # Common total row patterns
     total_keywords = [
         "total", "grand total", "sum", "aggregate", "overall",
         "combined", "consolidated"
     ]
-    
+
     # Check if portfolio field indicates a total
     for keyword in total_keywords:
         if portfolio_lower == keyword or portfolio_lower.startswith(keyword):
             return True
-    
+
     # Check lender field as well
     if lender:
         lender_lower = str(lender).lower().strip()
@@ -868,7 +965,7 @@ def is_total_row(row: Dict[str, Any]) -> bool:
             for keyword in total_keywords:
                 if keyword in value_lower:
                     return True
-    
+
     return False
 
 
@@ -879,7 +976,7 @@ def merge_partial_rows(rows: List[dict[str, Any]]) -> List[dict[str, Any]]:
     """
     if not rows:
         return []
-    
+
     # First pass: group rows by LSP and collect amounts
     lsp_amounts = {}
     for row in rows:
@@ -889,7 +986,7 @@ def merge_partial_rows(rows: List[dict[str, Any]]) -> List[dict[str, Any]]:
             if lsp_name not in lsp_amounts:
                 lsp_amounts[lsp_name] = []
             lsp_amounts[lsp_name].append((row, amount))
-    
+
     # Calculate which rows are sum totals
     sum_total_rows = set()
     for lsp_name, row_amounts in lsp_amounts.items():
@@ -897,18 +994,18 @@ def merge_partial_rows(rows: List[dict[str, Any]]) -> List[dict[str, Any]]:
         # Otherwise a single real row paired with a total row would both be removed.
         if len(row_amounts) <= 2:
             continue
-        
+
         for i, (current_row, current_amount) in enumerate(row_amounts):
             # Calculate sum of all OTHER rows
             other_sum = sum(amt for j, (_, amt) in enumerate(row_amounts) if j != i)
-            
+
             # If current amount equals sum of others (within small tolerance for floating point)
             if abs(current_amount - other_sum) < 0.01:
                 sum_total_rows.add(id(current_row))
-    
+
     # Second pass: filter out headers, totals, and sum totals
     filtered_rows = []
-    
+
     for row in rows:
         if row.get("_force_include"):
             filtered_rows.append(row)
@@ -916,17 +1013,17 @@ def merge_partial_rows(rows: List[dict[str, Any]]) -> List[dict[str, Any]]:
         # Skip header rows
         if is_header_row(row):
             continue
-        
+
         # Skip total rows (by keyword)
         if is_total_row(row):
             continue
-        
+
         # Skip rows that are sum totals
         if id(row) in sum_total_rows:
             continue
-        
+
         filtered_rows.append(row)
-    
+
     for row in filtered_rows:
         row.pop("_force_include", None)
 
@@ -953,12 +1050,12 @@ def forward_fill_column(rows: List[Dict[str, Any]], column_name: str) -> List[Di
     """
     if not rows:
         return rows
-    
+
     last_value = None
-    
+
     for row in rows:
         current_value = row.get(column_name)
-        
+
         # If current value is None or empty string, use last seen value
         if current_value is None or (isinstance(current_value, str) and not current_value.strip()):
             if last_value is not None:
@@ -966,7 +1063,7 @@ def forward_fill_column(rows: List[Dict[str, Any]], column_name: str) -> List[Di
         else:
             # Update last_value with current non-empty value
             last_value = current_value
-    
+
     return rows
 
 
@@ -985,5 +1082,5 @@ def forward_fill_columns(rows: List[Dict[str, Any]], column_names: List[str]) ->
     """
     for column_name in column_names:
         rows = forward_fill_column(rows, column_name)
-    
+
     return rows

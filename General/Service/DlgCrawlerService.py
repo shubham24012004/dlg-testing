@@ -1,11 +1,11 @@
+import json
 import datetime as dt
-from typing import Any, Dict, List, Optional, Tuple
 from utils.logger_config import logger_method
-
-from utils.content_fetchers import BROWSER_HEADERS, BROWSER_USER_AGENT, fetch_with_requests
-from DatabaseOperation.DatabaseModels.orm_models import FetchResult, LspMaster, DlgRaw
-from General.Managers.DlgCrawlerManager import DlgCrawlerManager
+from typing import Any, Dict, List, Optional, Tuple
 from utils.simple_ocr_extractor import extract_simple
+from General.Service.AuditLogService import AuditLogService
+from General.Managers.DlgCrawlerManager import DlgCrawlerManager
+from DatabaseOperation.DatabaseModels.orm_models import FetchResult, LspMaster, DlgRaw, AuditAction
 
 from utils.utils import (
     extract_dlg_from_plain_text,
@@ -16,9 +16,12 @@ from utils.utils import (
     looks_like_pdf,
     normalize_rows,
     parse_date_any,
+    fetch_with_requests,
+    fetch_with_playwright,
+    render_url_to_pdf
 )
 
-try:  # pragma: no cover - optional dependency
+try:
     from playwright.sync_api import sync_playwright
 
     PLAYWRIGHT_AVAILABLE = True
@@ -32,78 +35,37 @@ class DlgCrawlerService:
     def __init__(self):
         self.logger = logger_method(__name__)
         self.crawler_manager = DlgCrawlerManager()
+        self.auditlog_service = AuditLogService()
 
-    def _fetch_with_playwright(self, url: str, timeout_ms: int = 60_000,
-                               pre_click_js: str | None = None) -> FetchResult:
-        if not PLAYWRIGHT_AVAILABLE:
-            raise RuntimeError("Playwright not installed/available. Install playwright to scrape JS-rendered pages.")
-        header_overrides = {k: v for k, v in BROWSER_HEADERS.items() if k.lower() != "user-agent"}
-        with sync_playwright() as context_manager:
-            browser = context_manager.chromium.launch(headless=True,
-                                                      args=["--disable-blink-features=AutomationControlled"])
-            context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=header_overrides)
-            page = context.new_page()
-            page.goto(url, wait_until="networkidle", timeout=timeout_ms)
-            if pre_click_js:
-                page.evaluate(pre_click_js)
-                page.wait_for_timeout(2000)
-            html = page.content().encode("utf-8", errors="ignore")
-            context.close()
-            browser.close()
-            return FetchResult(
-                url=url,
-                status_code=200,
-                content_type="text/html; charset=utf-8",
-                body=html,
-                fetch_mode_used="playwright",
-            )
-
-    def _render_url_to_pdf(self,
-                           url: str,
-                           timeout_ms: int = 60_000,
-                           wait_ms: int = 0,
-                           wait_until: str = "networkidle",
-                           pre_click_js: Optional[str] = None,
-                           ) -> FetchResult:
-        if not PLAYWRIGHT_AVAILABLE:
-            raise RuntimeError("Playwright not installed/available. Install playwright to enable HTML->PDF rendering.")
-        from playwright.sync_api import TimeoutError as PWTimeout
-        with sync_playwright() as context_manager:
-            browser = context_manager.chromium.launch(headless=True,
-                                                      args=["--disable-blink-features=AutomationControlled"])
-            context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=BROWSER_HEADERS)
-            page = context.new_page()
-            wait_mode = wait_until if wait_until in {"load", "domcontentloaded", "networkidle"} else "networkidle"
+    def run_scrape_sources(self, sources: List[LspMaster]) -> None:
+        for source in sources:
+            scrape_started_at = dt.datetime.utcnow()
             try:
-                page.goto(url, wait_until=wait_mode, timeout=timeout_ms)
-            except Exception as e:
-                # Retry with a more permissive strategy if initial navigation times out
-                try:
-                    if isinstance(e, PWTimeout) or 'Timeout' in str(e):
-                        # retry once using 'load' and a longer timeout
-                        page.goto(url, wait_until='load', timeout=max(timeout_ms * 2, 120000))
-                    else:
-                        raise
-                except Exception:
-                    context.close()
-                    browser.close()
-                    raise
-
-            if pre_click_js:
-                page.evaluate(pre_click_js)
-                page.wait_for_timeout(2000)
-            if wait_ms:
-                page.wait_for_timeout(wait_ms)
-            pdf_bytes = page.pdf(format="A4", print_background=True, prefer_css_page_size=True)
-            context.close()
-            browser.close()
-            return FetchResult(
-                url=url,
-                status_code=200,
-                content_type="application/pdf",
-                body=pdf_bytes,
-                fetch_mode_used="playwright-pdf",
-            )
+                status, *_rest, normalized_rows = self.scrape_one(source)
+                self.persist_rows(status, normalized_rows, source, scrape_started_at)
+                self.auditlog_service.audit_manager.record(
+                    self.auditlog_service.audit_manager.build(
+                        lsp_id=source.lsp_id,
+                        action_taken=AuditAction.CRAWL,
+                        auto_manual="auto",
+                        user_id="system",
+                        payload=json.dumps({"status": status, "details": None, "ts": scrape_started_at.isoformat()}),
+                    )
+                )
+                self.logger.info(f"[OK] {source.lsp_name} -> {status}")
+            except Exception as exc:  # pragma: no cover - operational safety
+                self.persist_error(source, scrape_started_at)
+                self.auditlog_service.audit_manager.record(
+                    self.auditlog_service.audit_manager.build(
+                        lsp_id=source.lsp_id,
+                        action_taken=AuditAction.CRAWL,
+                        auto_manual="auto",
+                        user_id="system",
+                        payload=json.dumps(
+                            {"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()}),
+                    )
+                )
+                self.logger.error(f"[ERR] {source.lsp_name} -> Error ({str(exc)[:120]})")
 
     def scrape_one(self, source: LspMaster) -> Tuple[str, Optional[str], Optional[str], List[Dict[str, Any]]]:
         scrape_ts = dt.datetime.utcnow()
@@ -117,13 +79,12 @@ class DlgCrawlerService:
         if source.parse_hint == "ocr_simple" and not looks_like_pdf(fetch):
             render_pdf = bool(simple_cfg.get("render_pdf"))
             if render_pdf:
-                fetch = self._render_url_to_pdf(
+                fetch = render_url_to_pdf(
                     url=source.disclosure_url,
                     timeout_ms=self._coerce_int(simple_cfg.get("render_timeout_ms")) or 120_000,
                     wait_ms=self._coerce_int(simple_cfg.get("render_wait_ms")) or 0,
                     wait_until=simple_cfg.get("render_wait_until") or "networkidle",
-                    pre_click_js=pre_click_js,
-                )
+                    pre_click_js=pre_click_js)
             else:
                 raise RuntimeError(
                     "parse_hint=ocr_simple requires a PDF disclosure; set ocr.render_pdf=true to render HTML to PDF"
@@ -164,9 +125,9 @@ class DlgCrawlerService:
             scrape_ts: dt.datetime,
     ) -> None:
         if status in {"Completed", "Partial"}:
-            dlg_rows = [dlg_raw_from_dict(row, status) for row in normalized_rows]
+            dlg_rows = [self.dlg_raw_from_dict(row, status) for row in normalized_rows]
             for dlg_row in dlg_rows:
-                dlg_row.lsp_id = source.lsp_id or source.lsp_name
+                dlg_row.lsp_id = source.lsp_id
             self.crawler_manager.append(dlg_rows)
             return
 
@@ -196,7 +157,8 @@ class DlgCrawlerService:
         )
         self.crawler_manager.append([row])
 
-    def dlg_raw_from_dict(self, data: Dict[str, Any], status: str) -> DlgRaw:
+    @staticmethod
+    def dlg_raw_from_dict(data: Dict[str, Any], status: str) -> DlgRaw:
         return DlgRaw(
             lsp_name=data.get("lsp_name"),
             lender=data.get("lender"),
@@ -210,13 +172,13 @@ class DlgCrawlerService:
     # ------------------------------------------------------------------
     # Fetching/parsing helpers
     # ------------------------------------------------------------------
-    def _execute_fetch(self,
-                       source: LspMaster,
+    @staticmethod
+    def _execute_fetch(source: LspMaster,
                        pre_click_js: Optional[str],
                        ) -> FetchResult:
         fetch_hint = (source.fetch_hint or "auto").lower()
         if fetch_hint == "playwright":
-            return self._fetch_with_playwright(source.disclosure_url, pre_click_js=pre_click_js)
+            return fetch_with_playwright(source.disclosure_url, pre_click_js=pre_click_js)
         return fetch_with_requests(source.disclosure_url)
 
     def _parse_rows(self,
@@ -242,7 +204,7 @@ class DlgCrawlerService:
 
         rows = extract_from_html_tables(fetch)
         if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
-            fetch_pw = self._fetch_with_playwright(source.disclosure_url, pre_click_js=rules.get("pre_click_js"))
+            fetch_pw = fetch_with_playwright(source.disclosure_url, pre_click_js=rules.get("pre_click_js"))
             rows = extract_from_html_tables(fetch_pw)
         return rows
 

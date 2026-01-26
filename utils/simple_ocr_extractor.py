@@ -94,6 +94,17 @@ def _ocr_lines(
     crop_bottom_pct: Optional[float],
     slice_count: Optional[int],
 ) -> List[str]:
+    """
+
+    :param page:
+    :param resolution:
+    :param lang:
+    :param min_conf:
+    :param crop_top_pct:
+    :param crop_bottom_pct:
+    :param slice_count:
+    :return:
+    """
     base_image = page.to_image(resolution=resolution).original.convert("L")
     width, height = base_image.size
 

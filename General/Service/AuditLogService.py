@@ -10,8 +10,4 @@ class AuditLogService:
         self.audit_manager = AuditLogManager()
 
     def record(self, entry: AuditLog) -> AuditLog | None:
-        payload = (
-            f"{entry.created_at.isoformat()} | {entry.lsp_id} | {entry.action_taken.value} | "
-            f"{entry.auto_manual} | {entry.user_id} | {entry.payload or '-'}\n"
-        )
         return self.audit_manager.record(entry)

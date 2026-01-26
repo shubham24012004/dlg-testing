@@ -11,10 +11,11 @@ from typing import Any
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from utils.logger_config import logger_method
 
 from General.Controllers.DlgCrawlerController import DlgCrawlerController
-from General.Controllers.LSPMasterController import LSPMasterController
+from General.Controllers.LSPMasterController import lsp_master_bp
 from General.Controllers.AuditLogController import AuditLogController
 
 try:
@@ -44,9 +45,9 @@ class AppSettings:
 settings = AppSettings()
 app = Flask(__name__)
 
-crawler_controller = None
-lsp_master_controller = None
-audit_controller = None
+CORS(app)
+app.register_blueprint(lsp_master_bp)
+
 
 # ==================== Health & Utility Endpoints ====================
 
@@ -55,55 +56,10 @@ def healthcheck() -> Any:
     return jsonify({"status": "ok", "message": "OK"})
 
 
-@app.post("/scrape")
-def trigger_scrape() -> Any:
-    return jsonify(*crawler_controller.handle_trigger_scrape(request, crawler_controller))
-
-
-# ==================== LspMaster CRUD Endpoints ====================
-
-@app.post("/api/lsp_master")
-def api_upsert_lsp_master() -> Any:
-    return jsonify(*lsp_master_controller.handle_upsert_lsp_master(request))
-
-
-@app.get("/api/lsp_master")
-def api_list_lsp_master() -> Any:
-    return jsonify(*lsp_master_controller.handle_list_lsp_master(request))
-
-
-@app.get("/api/lsp_master/<int:id>")
-def api_get_lsp_master(lsp_id: int) -> Any:
-    return jsonify(*lsp_master_controller.handle_get_lsp_master(lsp_id))
-
-
-@app.put("/api/lsp_master/<int:id>")
-def api_update_lsp_master(lsp_id: int) -> Any:
-    return jsonify(*lsp_master_controller.handle_update_lsp_master(lsp_id, request))
-
-
-@app.delete("/api/lsp_master/<lsp_id>")
-def api_delete_lsp_master(lsp_id: str) -> Any:
-    return jsonify(*lsp_master_controller.handle_delete_lsp_master(lsp_id))
-
-
-# ==================== AuditLog CRUD Endpoints ====================
-
-@app.get("/api/audit_log")
-def api_list_audit_log() -> Any:
-    return jsonify(*audit_controller.handle_list_audit_log(request))
-
-
 def main() -> None:
-    db_path = os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db")
-
-    logger.info("Application initialized with database: %s", db_path)
-
-    global crawler_controller, lsp_master_controller, audit_controller
-
-    crawler_controller = DlgCrawlerController()
-    lsp_master_controller = LSPMasterController()
-    audit_controller = AuditLogController()
+    # db_path = os.getenv("DLG_SQLITE_PATH", "dlg_analysis.db")
+    #
+    # logger.info("Application initialized with database: {0}", db_path)
 
     # Setup cron job scheduler if enabled
     if os.getenv("DLG_CRON_ENABLED", "0") in {"1", "true", "True"}:
@@ -115,17 +71,17 @@ def main() -> None:
             cron_expr = os.getenv("DLG_CRON", "0 * * * *")  # Default: top of every hour
             timezone = os.getenv("DLG_CRON_TZ", "UTC")
 
-            scheduler = BackgroundScheduler(timezone=timezone)
-            scheduler.add_job(
-                crawler_controller.run_scrape(),
-                CronTrigger.from_crontab(cron_expr)
-            )
-            scheduler.start()
+            # scheduler = BackgroundScheduler(timezone=timezone)
+            # scheduler.add_job(
+            #     crawler_controller.run_scrape(),
+            #     CronTrigger.from_crontab(cron_expr)
+            # )
+            # scheduler.start()
 
-            logger.info("Cron scheduler started: %s (%s)", cron_expr, timezone)
+            logger.info("Cron scheduler started: {0} ({0})", cron_expr, timezone)
 
     # Run Flask server
-    logger.info("Starting Flask server on %s:%d", settings.host, settings.port)
+    logger.info("Starting Flask server on {0}:{0}", settings.host, settings.port)
     app.run(host=settings.host, port=settings.port, debug=settings.debug)
 
 
