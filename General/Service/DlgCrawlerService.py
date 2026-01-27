@@ -37,35 +37,38 @@ class DlgCrawlerService:
         self.crawler_manager = DlgCrawlerManager()
         self.auditlog_service = AuditLogService()
 
-    def run_scrape_sources(self, sources: List[LspMaster]) -> None:
+    def run_scrape_sources(self, sources: List[LspMaster], user_claims: Optional[Dict[str, Any]] = None) -> None:
         for source in sources:
             scrape_started_at = dt.datetime.utcnow()
             try:
                 status, *_rest, normalized_rows = self.scrape_one(source)
                 self.persist_rows(status, normalized_rows, source, scrape_started_at)
+                user_id = user_claims.get('username') if user_claims else "system"
                 self.auditlog_service.record(
                     self.auditlog_service.build(
                         lsp_id=source.id,
                         action_taken=AuditAction.CRAWL,
                         auto_manual="auto",
-                        user_id="system",
+                        user_id=user_id,
                         payload={"status": status, "details": None, "ts": scrape_started_at.isoformat()},
+                        user_claims=user_claims
                     )
                 )
                 self.logger.info(f"[OK] {source.name} -> {status}")
             except Exception as exc:  # pragma: no cover - operational safety
                 self.persist_error(source, scrape_started_at)
+                user_id = user_claims.get('username') if user_claims else "system"
                 self.auditlog_service.record(
                     self.auditlog_service.build(
                         lsp_id=source.id,
                         action_taken=AuditAction.CRAWL,
                         auto_manual="auto",
-                        user_id="system",
-                        payload={"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()}
+                        user_id=user_id,
+                        payload={"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()},
+                        user_claims=user_claims
                     )
                 )
                 self.logger.error(f"[ERR logging Audit Log] {source.name} -> Error ({str(exc)[:120]})")
-
     def scrape_one(self, source: LspMaster) -> Tuple[str, Optional[str], Optional[str], List[Dict[str, Any]]]:
         scrape_ts = dt.datetime.utcnow()
         rules = load_rules(source.rules_json) if source.rules_json else {}

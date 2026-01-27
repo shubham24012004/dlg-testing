@@ -17,6 +17,7 @@ from utils.logger_config import logger_method
 from General.Controllers.DlgCrawlerController import crawler_bp
 from General.Controllers.LSPMasterController import lsp_master_bp
 from General.Controllers.AuditLogController import auditlog_bp
+from General.Controllers.AuthController import auth_bp
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -46,6 +47,7 @@ settings = AppSettings()
 app = Flask(__name__)
 
 CORS(app)
+app.register_blueprint(auth_bp)
 app.register_blueprint(lsp_master_bp)
 app.register_blueprint(auditlog_bp)
 app.register_blueprint(crawler_bp)

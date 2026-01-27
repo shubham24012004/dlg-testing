@@ -3,7 +3,7 @@ AuditLogService with DB support for audit logs.
 """
 import datetime as dt
 import json
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
@@ -46,7 +46,20 @@ class AuditLogManager:
             auto_manual: str,
             user_id: str,
             payload: Optional[Any] = None,
+            user_claims: Optional[Dict[str, Any]] = None,
     ) -> AuditLog:
+        # Merge user details into payload
+        if payload is None:
+            payload = {}
+
+        # Add user information to payload
+        if user_claims:
+            payload["user_details"] = {
+                "username": user_claims.get('username'),
+                "user_id_jwt": user_claims.get('user_id'),
+                "role": user_claims.get('role'),
+            }
+        
         return AuditLog(
             lsp_id=lsp_id,
             action_taken=action_taken,
@@ -76,7 +89,7 @@ class AuditLogManager:
             result = []
             for row in rows:
                 result_dict = {"lsp_id": row.lsp_id, "auto_manual": row.auto_manual, "user_id": row.user_id,
-                               "payload": row.payload,
+                               "payload": json.loads(row.payload),
                                "action_taken": row.action_taken.value, "log_timestamp": row.log_timestamp}
                 result.append(result_dict)
             return result, len(result)

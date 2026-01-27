@@ -1,5 +1,5 @@
 import datetime as dt
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from utils.logger_config import logger_method
 
 from DatabaseOperation.DatabaseModels.orm_models import AuditLog, AuditAction
@@ -19,8 +19,9 @@ class AuditLogService:
               auto_manual: str,
               user_id: str,
               lsp_id: Optional[str] = None,
-              payload: Optional[Any] = None) -> AuditLog:
-        return self.audit_manager.build(lsp_id, action_taken, auto_manual, user_id, payload)
+              payload: Optional[Any] = None,
+              user_claims: Optional[Dict[str, Any]] = None) -> AuditLog:
+        return self.audit_manager.build(lsp_id, action_taken, auto_manual, user_id, payload, user_claims)
 
     def list_audit_logs(self,
                         start_date: Optional[dt.date] = (dt.datetime.now() - dt.timedelta(30)).date(),
