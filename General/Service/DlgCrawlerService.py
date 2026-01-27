@@ -43,29 +43,28 @@ class DlgCrawlerService:
             try:
                 status, *_rest, normalized_rows = self.scrape_one(source)
                 self.persist_rows(status, normalized_rows, source, scrape_started_at)
-                self.auditlog_service.audit_manager.record(
-                    self.auditlog_service.audit_manager.build(
-                        lsp_id=source.lsp_id,
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        lsp_id=source.id,
                         action_taken=AuditAction.CRAWL,
                         auto_manual="auto",
                         user_id="system",
-                        payload=json.dumps({"status": status, "details": None, "ts": scrape_started_at.isoformat()}),
+                        payload={"status": status, "details": None, "ts": scrape_started_at.isoformat()},
                     )
                 )
-                self.logger.info(f"[OK] {source.lsp_name} -> {status}")
+                self.logger.info(f"[OK] {source.name} -> {status}")
             except Exception as exc:  # pragma: no cover - operational safety
                 self.persist_error(source, scrape_started_at)
-                self.auditlog_service.audit_manager.record(
-                    self.auditlog_service.audit_manager.build(
-                        lsp_id=source.lsp_id,
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        lsp_id=source.id,
                         action_taken=AuditAction.CRAWL,
                         auto_manual="auto",
                         user_id="system",
-                        payload=json.dumps(
-                            {"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()}),
+                        payload={"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()}
                     )
                 )
-                self.logger.error(f"[ERR] {source.lsp_name} -> Error ({str(exc)[:120]})")
+                self.logger.error(f"[ERR logging Audit Log] {source.name} -> Error ({str(exc)[:120]})")
 
     def scrape_one(self, source: LspMaster) -> Tuple[str, Optional[str], Optional[str], List[Dict[str, Any]]]:
         scrape_ts = dt.datetime.utcnow()
@@ -80,7 +79,7 @@ class DlgCrawlerService:
             render_pdf = bool(simple_cfg.get("render_pdf"))
             if render_pdf:
                 fetch = render_url_to_pdf(
-                    url=source.disclosure_url,
+                    url=source.dlg_url,
                     timeout_ms=self._coerce_int(simple_cfg.get("render_timeout_ms")) or 120_000,
                     wait_ms=self._coerce_int(simple_cfg.get("render_wait_ms")) or 0,
                     wait_until=simple_cfg.get("render_wait_until") or "networkidle",
@@ -103,7 +102,7 @@ class DlgCrawlerService:
         normalized, partial_flag = normalize_rows(
             raw_rows=raw_rows,
             fetch=fetch,
-            lsp_name=source.lsp_name,
+            lsp_name=source.name,
             scrape_ts=scrape_ts,
             rules_json=source.rules_json,
         )
@@ -127,45 +126,45 @@ class DlgCrawlerService:
         if status in {"Completed", "Partial"}:
             dlg_rows = [self.dlg_raw_from_dict(row, status) for row in normalized_rows]
             for dlg_row in dlg_rows:
-                dlg_row.lsp_id = source.lsp_id
+                dlg_row.lsp_id = source.id
+                dlg_row.lsp_name = source.name
             self.crawler_manager.append(dlg_rows)
             return
 
         if status == "Missing":
             row = DlgRaw(
-                lsp_name=source.lsp_name,
+                lsp_id=source.id,
+                lsp_name=source.name,
                 lender=None,
                 portfolio=None,
                 amount=None,
                 as_on_timestamp=None,
                 scrape_timestamp=scrape_ts,
-                complete="Missing",
-                lsp_id=(source.lsp_id or source.lsp_name),
+                complete="Missing"
             )
             self.crawler_manager.append([row])
 
     def persist_error(self, source: LspMaster, scrape_ts: dt.datetime) -> None:
         row = DlgRaw(
-            lsp_name=source.lsp_name,
+            lsp_name=source.name,
             lender=None,
             portfolio=None,
             amount=None,
             as_on_timestamp=None,
             scrape_timestamp=scrape_ts,
             complete="Error",
-            lsp_id=(source.lsp_id or source.lsp_name),
+            lsp_id=source.id,
         )
         self.crawler_manager.append([row])
 
     @staticmethod
     def dlg_raw_from_dict(data: Dict[str, Any], status: str) -> DlgRaw:
         return DlgRaw(
-            lsp_name=data.get("lsp_name"),
-            lender=data.get("lender"),
-            portfolio=data.get("portfolio"),
-            amount=data.get("amount"),
-            as_on_timestamp=data.get("as_on_timestamp"),
-            scrape_timestamp=data.get("scrape_timestamp"),
+            lender=data.get("Lender"),
+            portfolio=data.get("Portfolio"),
+            amount=data.get("Amount"),
+            as_on_timestamp=data.get("AsOnTimestamp"),
+            scrape_timestamp=data.get("ScrapeTimestamp"),
             complete=status
         )
 
@@ -178,8 +177,8 @@ class DlgCrawlerService:
                        ) -> FetchResult:
         fetch_hint = (source.fetch_hint or "auto").lower()
         if fetch_hint == "playwright":
-            return fetch_with_playwright(source.disclosure_url, pre_click_js=pre_click_js)
-        return fetch_with_requests(source.disclosure_url)
+            return fetch_with_playwright(source.dlg_url, pre_click_js=pre_click_js)
+        return fetch_with_requests(source.dlg_url)
 
     def _parse_rows(self,
                     source: LspMaster,

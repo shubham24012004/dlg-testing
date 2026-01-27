@@ -27,16 +27,37 @@ def handle_list_lsp_master():
                                                     lsp_name=lsp_name)
         logger.info(f"Fetched LSP Master records: {rows}")
         if rows > 0:
-            return jsonify({"statusCode": HTTPStatus.OK, "message": "LSP fetched successfully", "data": results,
-                            "count": rows})
+            return jsonify({"status": HTTPStatus.OK, "message": "LSP fetched successfully", "data": results,
+                            "count": rows}), HTTPStatus.OK
         else:
             logger.info(f"LSP Master record not found")
             return jsonify(
-                {"statusCode": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'})
+                {"status": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'}), HTTPStatus.NOT_FOUND
     except Exception as exc:
         logger.critical(f"Error listing LSP Master records: {str(exc)}", exc_info=True)
         return jsonify(
-            {"statusCode": HTTPStatus.INTERNAL_SERVER_ERROR, "message": str(exc)})
+            {"status": HTTPStatus.INTERNAL_SERVER_ERROR, "message": str(exc)}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@lsp_master_bp.get("/api/get_dlg_url")
+def get_dlg_url():
+    """Handle LSP master list request."""
+    try:
+        lsp_id = request.args.get('lsp_id', default=0, type=int)
+        logger.info(f"Calling find_dlg_url for LSP : {lsp_id}")
+        lsp_name, dlg_url, reason = lsp_service.find_dlg_url(lsp_id)
+
+        if dlg_url:
+            return jsonify({"status": HTTPStatus.OK, "message": "DLG Url Found", "data": dlg_url}), HTTPStatus.OK
+        else:
+            logger.info(f"DLG URL not found for {lsp_name}")
+            return jsonify(
+                {"status": HTTPStatus.NOT_FOUND, "message": f'DLG URL Not Found for {lsp_name}'}), HTTPStatus.NOT_FOUND
+    except Exception as exc:
+        logger.critical(f"Exception finding DLG URL: {str(exc)}", exc_info=True)
+        return jsonify(
+            {"status": HTTPStatus.INTERNAL_SERVER_ERROR,
+             "message": f"Exception finding DLG URL {str(exc)}"}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @lsp_master_bp.post("/api/lsp_master")
@@ -45,7 +66,7 @@ def handle_new_lsp_master():
     payload = request.get_json(silent=True)
     if not payload:
         return jsonify(
-            {"statusCode": HTTPStatus.BAD_REQUEST, "message": 'No Data found'})
+            {"status": HTTPStatus.BAD_REQUEST, "message": 'No Data found'}), HTTPStatus.BAD_REQUEST
 
     try:
         # typecast payload to lspMasterIp
@@ -55,7 +76,7 @@ def handle_new_lsp_master():
             message = f"Could not insert New LSP {payload}. LSP already exists"
             logger.error(message)
             return jsonify(
-                {"statusCode": HTTPStatus.INTERNAL_SERVER_ERROR, "message": message})
+                {"status": HTTPStatus.INTERNAL_SERVER_ERROR, "message": message}), HTTPStatus.INTERNAL_SERVER_ERROR
         else:
             # todo
             # if lsp.dlg_url:
@@ -64,11 +85,12 @@ def handle_new_lsp_master():
             #     in return message inform dlg not found
             logger.info(f"Inserted LSP Master record {lsp_master_ip.lsp_name}")
             return jsonify(
-                {"statusCode": HTTPStatus.OK, "message": "LSP data added successfully", "data": lsp, "count": 1})
+                {"status": HTTPStatus.OK, "message": "LSP data added successfully", "data": lsp,
+                 "count": 1}), HTTPStatus.OK
     except Exception as exc:
         logger.critical(f"Error inserting LSP master: {str(exc)} {payload}", exc_info=True)
         return jsonify(
-            {"statusCode": HTTPStatus.BAD_REQUEST, "message": str(exc)})
+            {"status": HTTPStatus.BAD_REQUEST, "message": str(exc)}), HTTPStatus.BAD_REQUEST
 
 
 @lsp_master_bp.put("/api/lsp_master/")
@@ -77,7 +99,7 @@ def handle_update_lsp_master():
     payload = request.get_json(silent=True)
     if not payload:
         return jsonify(
-            {"statusCode": HTTPStatus.BAD_REQUEST, "message": 'Missing input Payload'})
+            {"status": HTTPStatus.BAD_REQUEST, "message": 'Missing input Payload'}), HTTPStatus.BAD_REQUEST
 
     try:
         lsp_master = LspMaster(**payload)
@@ -85,14 +107,15 @@ def handle_update_lsp_master():
         if not lsp:
             logger.warning(f"LSP Master record not found for update")
             return jsonify(
-                {"statusCode": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'})
+                {"status": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'}), HTTPStatus.NOT_FOUND
         logger.info(f"Updated LSP Master record with ID {lsp.id}")
         return jsonify(
-            {"statusCode": HTTPStatus.OK, "message": "LSP data updated successfully", "data": lsp, "count": 1})
+            {"status": HTTPStatus.OK, "message": "LSP data updated successfully", "data": lsp,
+             "count": 1}), HTTPStatus.OK
     except Exception as exc:
         logger.critical(f"Error updating LSP master: {str(exc)}", exc_info=True)
         return jsonify(
-            {"statusCode": HTTPStatus.BAD_REQUEST, "message": str(exc)})
+            {"status": HTTPStatus.INTERNAL_SERVER_ERROR, "message": str(exc)}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @lsp_master_bp.delete("/api/lsp_master/")
@@ -104,11 +127,11 @@ def handle_delete_lsp_master():
         if deleted <= 0:
             logger.warning(f"LSP Master record with ID {lsp_id} not found for deletion")
             return jsonify(
-                {"statusCode": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'})
+                {"status": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found'}), HTTPStatus.NOT_FOUND
         logger.info(f"Deleted LSP Master record with ID {lsp_id}")
         return jsonify(
-            {"statusCode": HTTPStatus.OK, "message": 'LSP Deleted'})
+            {"status": HTTPStatus.OK, "message": 'LSP Deleted'}), HTTPStatus.OK
     except Exception as exc:
         logger.critical(f"Error deleting LSP master: {str(exc)}", exc_info=True)
         return jsonify(
-            {"statusCode": HTTPStatus.BAD_REQUEST, "message": str(exc)})
+            {"status": HTTPStatus.BAD_REQUEST, "message": str(exc)}), HTTPStatus.BAD_REQUEST

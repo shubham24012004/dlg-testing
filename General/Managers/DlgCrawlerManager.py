@@ -35,21 +35,8 @@ class DlgCrawlerManager:
         session = conn_factory.get_session()
         try:
             for row in rows:
-                # resolve numeric PK for lsp_id when possible
-                lsp_id = None
-                identifier_str = row.lsp_id or row.lsp_name
-                if row.lsp_id is not None:
-                    try:
-                        lsp_id = int(row.lsp_id)
-                    except Exception:
-                        lm = session.query(LspMaster).filter_by(name=identifier_str).one_or_none()
-                        if lm:
-                            lsp_id = lm.id
-                if lsp_id is None:
-                    # fallback - try to find by name
-                    lm = session.query(LspMaster).filter_by(name=identifier_str).one_or_none()
-                    if lm:
-                        lsp_id = lm.id
+                lsp_id = row.lsp_id
+                lsp_name = row.lsp_name
                 lender = row.lender or ""
                 portfolio = row.portfolio or ""
                 as_on_ts = row.as_on_timestamp or row.scrape_timestamp

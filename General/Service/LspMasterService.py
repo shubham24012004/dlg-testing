@@ -1,46 +1,157 @@
 from utils.logger_config import logger_method
-from typing import Optional, Any
-from DatabaseOperation.DatabaseModels.orm_models import LspMaster, LspMasterIp
+from utils.disclosure_url_finder import find_dlg_disclosure_url
+from typing import Optional, Any, List
+from DatabaseOperation.DatabaseModels.orm_models import LspMaster, LspMasterIp, AuditAction
 from General.Managers.LspMasterManager import LspMasterManager
+from General.Service.AuditLogService import AuditLogService
 
 
 class LSPMasterService:
-    """Trivial audit logger that writes newline-delimited text files."""
-
     def __init__(self):
         self.logger = logger_method(__name__)
         self.lsp_manager = LspMasterManager()
+        self.auditlog_service = AuditLogService()
 
     def insert(self, lm: LspMasterIp) -> Any:
-        master_obj = LspMaster()
-        master_obj.home_url = lm.lsp_home_url
-        master_obj.name = lm.lsp_name
-        master_obj.dlg_url = self.find_dlg_url(lm.lsp_home_url)
-        master_obj.active = True
-        master_obj.parse_hint = 'auto'
-        master_obj.fetch_hint = 'auto'
-        master_obj.rules_json = '{}'
-        # todo add audit log here
-        return self.lsp_manager.insert(master_obj)
+        try:
+            master_obj = LspMaster()
+            master_obj.home_url = lm.lsp_home_url
+            master_obj.name = lm.lsp_name
+            master_obj.dlg_url = None
+            master_obj.active = True
+            master_obj.parse_hint = 'auto'
+            master_obj.fetch_hint = 'auto'
+            master_obj.rules_json = '{}'
+            result = self.lsp_manager.insert(master_obj)
+            if not result:
+                raise Exception("LSP already exists")
 
-    def update(self, lm: LspMaster) -> LspMaster | None:
-        # todo add audit log here
-        return self.lsp_manager.update(lm)
-
-    def delete(self, lsp_id: int) -> int:
-        # todo add audit log here
-        return self.lsp_manager.delete(lsp_id)
-
-    @staticmethod
-    def find_dlg_url(lsp_home_url) -> str | None:
-        # todo: write code for DLG url finder here and update lsp master with value of URL found/None
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    lsp_id=None,
+                    action_taken=AuditAction.INSERT_LSP,
+                    auto_manual="auto",
+                    user_id="system",
+                    payload={"status": "Success", "details": f"Added New LSP", "request_object": result}
+                )
+            )
+            return result
+        except Exception as ex:
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    lsp_id=None,
+                    action_taken=AuditAction.INSERT_LSP,
+                    auto_manual="auto",
+                    user_id="system",
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__}
+                )
+            )
         return None
 
-    def load_active(self, lsp_id: Optional[int] = None) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any]:
-        return self.list_lsp_master(active_only=True, lsp_id=lsp_id)
+    def update(self, lm: LspMaster) -> LspMaster | None:
+        try:
+            result = self.lsp_manager.update(lm)
+            if not result:
+                raise Exception("LSP not found")
+
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    lsp_id=None,
+                    action_taken=AuditAction.UPDATE_LSP,
+                    auto_manual="auto",
+                    user_id="system",
+                    payload={"status": "Success", "details": f"Updated LSP", "request_object": result}
+                )
+            )
+            return result
+        except Exception as ex:
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    lsp_id=None,
+                    action_taken=AuditAction.UPDATE_LSP,
+                    auto_manual="auto",
+                    user_id="system",
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__}
+                )
+            )
+        return None
+
+    def delete(self, lsp_id: int) -> int:
+        try:
+            result = self.lsp_manager.delete(lsp_id)
+            if result <= 0:
+                raise Exception("LSP not found")
+
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    lsp_id=None,
+                    action_taken=AuditAction.DELETE_LSP,
+                    auto_manual="auto",
+                    user_id="system",
+                    payload={"status": "Success", "details": f"Deleted LSP", "request_object": result}
+                )
+            )
+            return result
+        except Exception as ex:
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    lsp_id=None,
+                    action_taken=AuditAction.DELETE_LSP,
+                    auto_manual="auto",
+                    user_id="system",
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lsp_id}
+                )
+            )
+
+    def find_dlg_url(self, lsp_id):
+        dlg_url = None
+        reason = None
+        lsp_name = ""
+        home_url = ""
+        try:
+            lsps, count = self.list_lsp_master(lsp_id=lsp_id)
+            if len(lsps) > 0:
+                for row in lsps:
+                    lsp = LspMaster(**row)
+                    dlg_url, reason = find_dlg_disclosure_url(lsp.home_url)
+                    lsp_name = lsp.name
+                    home_url = lsp.home_url
+        except Exception as ex:
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    lsp_id=lsp_id,
+                    action_taken=AuditAction.URL_FINDER,
+                    auto_manual="auto",
+                    user_id="system",
+                    payload={"status": "Exception", "details": f"{str(ex)} reason: {reason}",
+                             "request_object": f'lsp_id: {lsp_id}'}
+                )
+            )
+        self.auditlog_service.record(
+            self.auditlog_service.build(
+                lsp_id=lsp_id,
+                action_taken=AuditAction.DELETE_LSP,
+                auto_manual="auto",
+                user_id="system",
+                payload={"status": "Success",
+                         "details": {"lsp_name": lsp_name, "home_url": home_url, "dlg_url": dlg_url},
+                         "request_object": f'lsp_id: {lsp_id}'}
+            )
+        )
+        return lsp_name, dlg_url, reason
+
+    def load_active(self, lsp_id: Optional[int] = None) -> List[LspMaster]:
+        result, count = self.list_lsp_master(active_only=True, lsp_id=lsp_id)
+        lsp_master_list = []
+        for row in result:
+            lsp_master_obj = LspMaster(**row)
+            if lsp_master_obj.dlg_url:
+                lsp_master_list.append(lsp_master_obj)
+        return lsp_master_list
 
     def list_lsp_master(
-            self, active_only: bool = False, per_page: int = None, page: int = None,  lsp_id: int = None, lsp_name: str = None
+            self, active_only: bool = False, per_page: int = None, page: int = None, lsp_id: int = None,
+            lsp_name: str = None
     ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any]:
 
         return self.lsp_manager.list_lsp_master(active_only, per_page, page, lsp_id, lsp_name)

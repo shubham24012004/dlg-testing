@@ -69,3 +69,4 @@ class AuditLog(Base):
     user_id = Column(String)
     payload = Column(JSON)
     action_taken = Column(SAEnum(AuditAction), nullable=False)
+    log_timestamp = Column(TIMESTAMP(timezone=True))

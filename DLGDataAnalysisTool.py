@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 from flask_cors import CORS
 from utils.logger_config import logger_method
 
-from General.Controllers.DlgCrawlerController import DlgCrawlerController
+from General.Controllers.DlgCrawlerController import crawler_bp
 from General.Controllers.LSPMasterController import lsp_master_bp
-from General.Controllers.AuditLogController import AuditLogController
+from General.Controllers.AuditLogController import auditlog_bp
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -47,6 +47,8 @@ app = Flask(__name__)
 
 CORS(app)
 app.register_blueprint(lsp_master_bp)
+app.register_blueprint(auditlog_bp)
+app.register_blueprint(crawler_bp)
 
 
 # ==================== Health & Utility Endpoints ====================

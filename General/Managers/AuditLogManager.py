@@ -2,10 +2,13 @@
 AuditLogService with DB support for audit logs.
 """
 import datetime as dt
-from typing import Optional
+import json
+from typing import Optional, Any
+
+from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
-from DatabaseOperation.DatabaseModels.orm_models import AuditAction, LspMaster, AuditLog
+from DatabaseOperation.DatabaseModels.orm_models import AuditAction, AuditLog
 from utils.logger_config import logger_method
 
 
@@ -16,38 +19,25 @@ class AuditLogManager:
         self.conn_factory = ConnectionFactory()
         self.logger = logger_method(__name__)
 
-    def record(self, entry: AuditLog) -> AuditLog | None:
+    def record(self, entry: AuditLog) -> bool:
         session = self.conn_factory.get_session()
         try:
-            # try to resolve non-numeric `lsp_id` to numeric PK
-            resolved_lsp_id = None
-            identifier_str = None
-            if entry.lsp_id is not None:
-                try:
-                    resolved_lsp_id = int(entry.lsp_id)
-                except (ValueError, TypeError):
-                    identifier_str = entry.lsp_id
-                    # try resolving by name (identifier_str may be LSP name)
-                    lm = session.query(LspMaster).filter_by(name=identifier_str).one_or_none()
-                    if lm:
-                        resolved_lsp_id = lm.id
-
             db_entry = AuditLog(
-                lsp_id=resolved_lsp_id,
+                lsp_id=entry.lsp_id,
                 auto_manual=entry.auto_manual,
                 user_id=entry.user_id,
                 payload=entry.payload or "",
-                action_taken=(entry.action_taken.value if hasattr(entry.action_taken, "value") else entry.action_taken),
-            )
+                action_taken=entry.action_taken,
+                log_timestamp=entry.log_timestamp)
             session.add(db_entry)
             session.commit()
-            return db_entry
+            return True
         except SQLAlchemyError as e:
             session.rollback()
-            print(f"[AuditLogManagerDB] Error: {e}")
+            self.logger.exception(f"[AuditLogManagerDB] Error: {e}")
         finally:
             session.close()
-        return None
+        return False
 
     @staticmethod
     def build(
@@ -55,26 +45,43 @@ class AuditLogManager:
             action_taken: AuditAction,
             auto_manual: str,
             user_id: str,
-            payload: Optional[str] = None,
+            payload: Optional[Any] = None,
     ) -> AuditLog:
         return AuditLog(
             lsp_id=lsp_id,
             action_taken=action_taken,
             auto_manual=auto_manual,
             user_id=user_id,
-            payload=payload,
-            created_at=dt.datetime.utcnow(),
+            payload=json.dumps(payload),
+            log_timestamp=dt.datetime.utcnow(),
         )
 
-    def list_audit_log(self, lsp_id: Optional[int] = None, action_str: Optional[str] = None, limit: int = 1000) -> [
-        AuditLog]:
+    def list_audit_log(self, start_date, end_date, lsp_id, action_str, page, page_size):
         session = self.conn_factory.get_session()
         try:
-            #     ToDo Return list with filters applied
-            return None
+            query = session.query(AuditLog).order_by(desc(AuditLog.log_timestamp))
+            if lsp_id:
+                query = query.filter_by(lsp_id=lsp_id)
+            if action_str:
+                query = query.filter_by(action_taken=action_str.value)
+            if start_date:
+                query = query.filter(AuditLog.log_timestamp >= start_date)
+            if end_date:
+                query = query.filter(AuditLog.log_timestamp <= end_date)
+            if page:
+                query = query.offset((page - 1) * page_size)
+            if page_size:
+                query = query.limit(page_size)
+            rows = query.all()
+            result = []
+            for row in rows:
+                result_dict = {"lsp_id": row.lsp_id, "auto_manual": row.auto_manual, "user_id": row.user_id,
+                               "payload": row.payload,
+                               "action_taken": row.action_taken.value, "log_timestamp": row.log_timestamp}
+                result.append(result_dict)
+            return result, len(result)
         except SQLAlchemyError as e:
-            session.rollback()
-            print(f"[AuditLogManagerDB] Error: {e}")
+            self.logger.exception(f"[AuditLogManagerDB] Error: {e}")
         finally:
             session.close()
         return None
