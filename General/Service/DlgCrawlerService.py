@@ -1,11 +1,10 @@
-import json
 import datetime as dt
 from utils.logger_config import logger_method
 from typing import Any, Dict, List, Optional, Tuple
 from utils.simple_ocr_extractor import extract_simple
 from General.Service.AuditLogService import AuditLogService
 from General.Managers.DlgCrawlerManager import DlgCrawlerManager
-from DatabaseOperation.DatabaseModels.orm_models import FetchResult, LspMaster, DlgRaw, AuditAction
+from DatabaseOperation.DatabaseModels.master_models import FetchResult, LspMaster, DlgRaw, AuditAction, CrawlStatus
 
 from utils.utils import (
     extract_dlg_from_plain_text,
@@ -25,56 +24,59 @@ try:
     from playwright.sync_api import sync_playwright
 
     PLAYWRIGHT_AVAILABLE = True
-except Exception:
+except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
 
 class DlgCrawlerService:
     """Coordinates fetching, parsing, and persistence for DLG disclosures."""
 
-    def __init__(self):
+    def __init__(self, user_claims: Optional[Dict[str, Any]] = None):
         self.logger = logger_method(__name__)
-        self.crawler_manager = DlgCrawlerManager()
-        self.auditlog_service = AuditLogService()
+        self.user_claims = user_claims
+        self.crawler_manager = DlgCrawlerManager(user_claims=user_claims)
+        self.auditlog_service = AuditLogService(user_claims)
 
-    def run_scrape_sources(self, sources: List[LspMaster], user_claims: Optional[Dict[str, Any]] = None) -> None:
+    def run_scrape_sources(self, sources: List[LspMaster]) -> None:
         for source in sources:
             scrape_started_at = dt.datetime.utcnow()
             try:
                 status, *_rest, normalized_rows = self.scrape_one(source)
                 self.persist_rows(status, normalized_rows, source, scrape_started_at)
-                user_id = user_claims.get('username') if user_claims else "system"
+                user_id = self.user_claims.get('username') if self.user_claims else "system"
                 self.auditlog_service.record(
                     self.auditlog_service.build(
                         lsp_id=source.id,
                         action_taken=AuditAction.CRAWL,
                         auto_manual="auto",
                         user_id=user_id,
-                        payload={"status": status, "details": None, "ts": scrape_started_at.isoformat()},
-                        user_claims=user_claims
+                        payload={"status": status.value, "details": None, "ts": scrape_started_at.isoformat()}
                     )
                 )
-                self.logger.info(f"[OK] {source.name} -> {status}")
-            except Exception as exc:  # pragma: no cover - operational safety
+                self.logger.info(f"[OK] {source.name} -> {status.value}")
+            except Exception as exc:
                 self.persist_error(source, scrape_started_at)
-                user_id = user_claims.get('username') if user_claims else "system"
+                user_id = self.user_claims.get('username') if self.user_claims else "system"
                 self.auditlog_service.record(
                     self.auditlog_service.build(
                         lsp_id=source.id,
                         action_taken=AuditAction.CRAWL,
                         auto_manual="auto",
                         user_id=user_id,
-                        payload={"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()},
-                        user_claims=user_claims
+                        payload={"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()}
                     )
                 )
                 self.logger.error(f"[ERR logging Audit Log] {source.name} -> Error ({str(exc)[:120]})")
-    def scrape_one(self, source: LspMaster) -> Tuple[str, Optional[str], Optional[str], List[Dict[str, Any]]]:
+
+    def scrape_one(self, source: LspMaster) -> Tuple[CrawlStatus, Optional[str], Optional[str], List[Dict[str, Any]]]:
         scrape_ts = dt.datetime.utcnow()
         rules = load_rules(source.rules_json) if source.rules_json else {}
         pre_click_js = rules.get("pre_click_js")
         ocr_rules = rules.get("ocr") or {}
         simple_cfg = ocr_rules.get("simple") if isinstance(ocr_rules.get("simple"), dict) else ocr_rules
+
+        if not source.dlg_url:
+            return CrawlStatus.MISSING, None, None , []
 
         fetch = self._execute_fetch(source, pre_click_js)
 
@@ -99,10 +101,10 @@ class DlgCrawlerService:
             scrape_ts=scrape_ts,
         )
 
-        if not raw_rows and source.lsp_name.lower().startswith("finsall"):
-            raw_rows = extract_finsall_grand_total(fetch, source.lsp_name, scrape_ts, rules)
+        if not raw_rows and source.name.lower().startswith("finsall"):
+            raw_rows = extract_finsall_grand_total(fetch, source.name, scrape_ts, rules)
 
-        normalized, partial_flag = normalize_rows(
+        crawl_status, normalized = normalize_rows(
             raw_rows=raw_rows,
             fetch=fetch,
             lsp_name=source.name,
@@ -110,31 +112,28 @@ class DlgCrawlerService:
             rules_json=source.rules_json,
         )
 
-        if partial_flag:
-            return "Partial", fetch.fetch_mode_used, fetch.content_type, normalized
-        if not partial_flag:
-            return "Completed", fetch.fetch_mode_used, fetch.content_type, normalized
-        return "Missing", fetch.fetch_mode_used, fetch.content_type, []
+        return crawl_status, fetch.fetch_mode_used, fetch.content_type, normalized
 
     # ------------------------------------------------------------------
     # Persistence helpers
     # ------------------------------------------------------------------
     def persist_rows(
             self,
-            status: str,
+            status: CrawlStatus,
             normalized_rows: List[Dict[str, Any]],
             source: LspMaster,
             scrape_ts: dt.datetime,
     ) -> None:
-        if status in {"Completed", "Partial"}:
-            dlg_rows = [self.dlg_raw_from_dict(row, status) for row in normalized_rows]
+        if status in {CrawlStatus.COMPLETED, CrawlStatus.PARTIAL}:
+            dlg_rows = [self.dlg_raw_from_dict(row, status.value) for row in normalized_rows]
             for dlg_row in dlg_rows:
                 dlg_row.lsp_id = source.id
                 dlg_row.lsp_name = source.name
             self.crawler_manager.append(dlg_rows)
             return
 
-        if status == "Missing":
+        # if status in {CrawlStatus.MISSING, CrawlStatus.ERROR, CrawlStatus.NO_DATA, CrawlStatus.STALE}:
+        else:
             row = DlgRaw(
                 lsp_id=source.id,
                 lsp_name=source.name,
@@ -143,7 +142,7 @@ class DlgCrawlerService:
                 amount=None,
                 as_on_timestamp=None,
                 scrape_timestamp=scrape_ts,
-                complete="Missing"
+                complete=status.value
             )
             self.crawler_manager.append([row])
 
@@ -155,7 +154,7 @@ class DlgCrawlerService:
             amount=None,
             as_on_timestamp=None,
             scrape_timestamp=scrape_ts,
-            complete="Error",
+            complete=CrawlStatus.ERROR.value,
             lsp_id=source.id,
         )
         self.crawler_manager.append([row])
@@ -191,10 +190,10 @@ class DlgCrawlerService:
                     ) -> List[Dict[str, Any]]:
         parse_hint = (source.parse_hint or "auto").lower()
         if parse_hint == "plain_text":
-            return extract_dlg_from_plain_text(fetch.body, lsp_name=source.lsp_name, scrape_ts=scrape_ts,
+            return extract_dlg_from_plain_text(fetch.body, lsp_name=source.name, scrape_ts=scrape_ts,
                                                rules_json=source.rules_json)
         if parse_hint == "ocr_simple":
-            return self._extract_rows_with_simple_ocr(fetch, source.lsp_name, scrape_ts, rules)
+            return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules)
         if parse_hint == "pdf_table" or looks_like_pdf(fetch):
             return extract_from_pdf(fetch)
         if parse_hint == "html_table":
@@ -206,7 +205,7 @@ class DlgCrawlerService:
 
         rows = extract_from_html_tables(fetch)
         if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
-            fetch_pw = fetch_with_playwright(source.disclosure_url, pre_click_js=rules.get("pre_click_js"))
+            fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"))
             rows = extract_from_html_tables(fetch_pw)
         return rows
 

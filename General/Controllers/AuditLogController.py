@@ -1,6 +1,6 @@
 import datetime as dt
 from http import HTTPStatus
-from DatabaseOperation.DatabaseModels.orm_models import AuditAction
+from DatabaseOperation.DatabaseModels.master_models import AuditAction
 from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 from flask import request, jsonify, Blueprint
@@ -10,7 +10,6 @@ from General.Service.AuditLogService import AuditLogService
 auditlog_bp = Blueprint('auditlog_bp', __name__)
 
 logger = logger_method(__name__)
-audit_service = AuditLogService()
 
 
 @auditlog_bp.get("/api/auditlog")
@@ -43,6 +42,7 @@ def handle_list_audit_log():
         return jsonify(
             {"status": HTTPStatus.BAD_REQUEST, "message": message, "user_info": user_info}), HTTPStatus.BAD_REQUEST
     try:
+        audit_service = AuditLogService(user_claims)
         results, rows = audit_service.list_audit_logs(start_date=start_date, end_date=end_date, lsp_id=lsp_id,
                                                       action_str=action, page=page, page_size=page_size)
         if rows > 0:

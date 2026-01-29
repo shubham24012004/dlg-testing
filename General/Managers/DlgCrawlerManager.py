@@ -3,10 +3,10 @@ DlgCrawlerService with DB support for audit logs and raw data.
 """
 import re
 import datetime as dt
-from typing import Iterable
+from typing import Iterable, Optional, Dict, Any
 from utils.logger_config import logger_method
 from General.Managers.AuditLogManager import AuditLogManager
-from DatabaseOperation.DatabaseModels.orm_models import LspMaster, DlgRaw
+from DatabaseOperation.DatabaseModels.master_models import DlgRaw
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from utils.utils import parse_amount_any, parse_date_any, normalize_amount_to_crores
 
@@ -24,22 +24,42 @@ class DlgCrawlerManager:
         "Complete",
     ]
 
-    def __init__(self):
+    def __init__(self, user_claims: Optional[Dict[str, Any]] = None):
         self.logger = logger_method(__name__)
+        self.user_claims = user_claims
         self.conn_factory = ConnectionFactory()
-        self.audit_manager = AuditLogManager()
+        self.audit_manager = AuditLogManager(user_claims=user_claims)
 
-    @staticmethod
-    def append(rows: Iterable[DlgRaw]) -> None:
+    def _get_user_info(self) -> str:
+        """Get formatted user info string from user_claims."""
+        if not self.user_claims:
+            return "[User: system, Role: unknown]"
+        username = self.user_claims.get('username', 'unknown')
+        user_role = self.user_claims.get('role', 'unknown')
+        return f"[User: {username}, Role: {user_role}]"
+
+    def append(self, rows: Iterable[DlgRaw]) -> None:
         conn_factory = ConnectionFactory()
         session = conn_factory.get_session()
         try:
             for row in rows:
+                # Create payload dict from row object
+                payload = {
+                    "lsp_id": row.lsp_id,
+                    "lsp_name": row.lsp_name,
+                    "lender": row.lender,
+                    "portfolio": row.portfolio,
+                    "amount": row.amount,
+                    "as_on_timestamp": row.as_on_timestamp,
+                    "scrape_timestamp": row.scrape_timestamp,
+                    "complete": row.complete,
+                }
+                
                 lsp_id = row.lsp_id
                 lsp_name = row.lsp_name
                 lender = row.lender or ""
                 portfolio = row.portfolio or ""
-                as_on_ts = row.as_on_timestamp or row.scrape_timestamp
+                as_on_ts = row.as_on_timestamp
                 scrape_ts = row.scrape_timestamp or dt.datetime.utcnow()
 
                 # Coerce/validate amount: parse strings like '1,234,567' into floats (crores)
@@ -86,6 +106,7 @@ class DlgCrawlerManager:
 
                 if exists:
                     # skip duplicate
+                    self.logger.info(f"{self._get_user_info()} DLG row processed - status=skipped_duplicate, payload={payload}")
                     continue
 
                 db_row = DlgRaw(
@@ -100,9 +121,12 @@ class DlgCrawlerManager:
                 )
                 # use merge to avoid identity-map collisions when detached/duplicate PKs are present
                 session.merge(db_row)
+                
+                # Log successful row processing
+                self.logger.info(f"{self._get_user_info()} DLG row processed - status=inserted, payload={payload}")
             session.commit()
         except Exception as exc:
             session.rollback()
-            print(f"[DlgRawManager] DB append failed: {exc}")
+            self.logger.error(f"{self._get_user_info()} [DlgRawManager] DB append failed: {exc}")
         finally:
             session.close()

@@ -1,18 +1,20 @@
 from utils.logger_config import logger_method
-from utils.disclosure_url_finder import find_dlg_disclosure_url
 from typing import Optional, Any, List, Dict
-from DatabaseOperation.DatabaseModels.orm_models import LspMaster, LspMasterIp, AuditAction
+from DatabaseOperation.DatabaseModels.master_models import LspMaster, LspMasterIp, AuditAction
 from General.Managers.LspMasterManager import LspMasterManager
 from General.Service.AuditLogService import AuditLogService
+from General.Service.DisclosureUrlFinderService import DisclosureUrlFinderService
 
 
 class LSPMasterService:
-    def __init__(self):
+    def __init__(self, user_claims: Optional[Dict[str, Any]] = None):
         self.logger = logger_method(__name__)
-        self.lsp_manager = LspMasterManager()
-        self.auditlog_service = AuditLogService()
+        self.user_claims = user_claims
+        self.lsp_manager = LspMasterManager(user_claims)
+        self.auditlog_service = AuditLogService(user_claims)
+        self.disclosure_url_service = DisclosureUrlFinderService(user_claims)
 
-    def insert(self, lm: LspMasterIp, user_claims: Optional[Dict[str, Any]] = None) -> Any:
+    def insert(self, lm: LspMasterIp) -> Any:
         try:
             master_obj = LspMaster()
             master_obj.home_url = lm.lsp_home_url
@@ -26,39 +28,37 @@ class LSPMasterService:
             if not result:
                 raise Exception("LSP already exists")
 
-            user_id = user_claims.get('username') if user_claims else "system"
+            user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
                     lsp_id=None,
                     action_taken=AuditAction.INSERT_LSP,
                     auto_manual="auto",
                     user_id=user_id,
-                    payload={"status": "Success", "details": f"Added New LSP", "request_object": result},
-                    user_claims=user_claims
+                    payload={"status": "Success", "details": f"Added New LSP", "request_object": result}
                 )
             )
             return result
         except Exception as ex:
-            user_id = user_claims.get('username') if user_claims else "system"
+            user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
                     lsp_id=None,
                     action_taken=AuditAction.INSERT_LSP,
                     auto_manual="auto",
                     user_id=user_id,
-                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__},
-                    user_claims=user_claims
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__}
                 )
             )
         return None
 
-    def update(self, lm: LspMaster, user_claims: Optional[Dict[str, Any]] = None) -> LspMaster | None:
+    def update(self, lm: LspMaster) -> LspMaster | None:
         try:
             result = self.lsp_manager.update(lm)
             if not result:
                 raise Exception("LSP not found")
 
-            user_id = user_claims.get('username') if user_claims else "system"
+            user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
                     lsp_id=None,
@@ -66,56 +66,52 @@ class LSPMasterService:
                     auto_manual="auto",
                     user_id=user_id,
                     payload={"status": "Success", "details": f"Updated LSP", "request_object": result},
-                    user_claims=user_claims
                 )
             )
             return result
         except Exception as ex:
-            user_id = user_claims.get('username') if user_claims else "system"
+            user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
                     lsp_id=None,
                     action_taken=AuditAction.UPDATE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
-                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__},
-                    user_claims=user_claims
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__}
                 )
             )
         return None
 
-    def delete(self, lsp_id: int, user_claims: Optional[Dict[str, Any]] = None) -> int:
+    def delete(self, lsp_id: int) -> int:
         try:
             result = self.lsp_manager.delete(lsp_id)
             if result <= 0:
                 raise Exception("LSP not found")
 
-            user_id = user_claims.get('username') if user_claims else "system"
+            user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
                     lsp_id=None,
                     action_taken=AuditAction.DELETE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
-                    payload={"status": "Success", "details": f"Deleted LSP", "request_object": result},
-                    user_claims=user_claims
+                    payload={"status": "Success", "details": f"Deleted LSP", "request_object": result}
                 )
             )
             return result
         except Exception as ex:
-            user_id = user_claims.get('username') if user_claims else "system"
+            user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
                     lsp_id=None,
                     action_taken=AuditAction.DELETE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
-                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lsp_id},
-                    user_claims=user_claims
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lsp_id}
                 )
             )
 
-    def find_dlg_url(self, lsp_id, user_claims: Optional[Dict[str, Any]] = None):
+    def find_dlg_url(self, lsp_id):
         dlg_url = None
         reason = None
         lsp_name = ""
@@ -125,11 +121,11 @@ class LSPMasterService:
             if len(lsps) > 0:
                 for row in lsps:
                     lsp = LspMaster(**row)
-                    dlg_url, reason = find_dlg_disclosure_url(lsp.home_url)
+                    dlg_url, reason = self.disclosure_url_service.find_dlg_disclosure_url(lsp.home_url)
                     lsp_name = lsp.name
                     home_url = lsp.home_url
         except Exception as ex:
-            user_id = user_claims.get('username') if user_claims else "system"
+            user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
                     lsp_id=lsp_id,
@@ -137,21 +133,19 @@ class LSPMasterService:
                     auto_manual="auto",
                     user_id=user_id,
                     payload={"status": "Exception", "details": f"{str(ex)} reason: {reason}",
-                             "request_object": f'lsp_id: {lsp_id}'},
-                    user_claims=user_claims
+                             "request_object": f'lsp_id: {lsp_id}'}
                 )
             )
-        user_id = user_claims.get('username') if user_claims else "system"
+        user_id = self.user_claims.get('username') if self.user_claims else "system"
         self.auditlog_service.record(
             self.auditlog_service.build(
                 lsp_id=lsp_id,
-                action_taken=AuditAction.DELETE_LSP,
+                action_taken=AuditAction.URL_FINDER,
                 auto_manual="auto",
                 user_id=user_id,
                 payload={"status": "Success",
                          "details": {"lsp_name": lsp_name, "home_url": home_url, "dlg_url": dlg_url},
-                         "request_object": f'lsp_id: {lsp_id}'},
-                user_claims=user_claims
+                         "request_object": f'lsp_id: {lsp_id}'}
             )
         )
         return lsp_name, dlg_url, reason

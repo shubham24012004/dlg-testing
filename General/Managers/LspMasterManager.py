@@ -1,19 +1,28 @@
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 from sqlalchemy import asc
 
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
-from DatabaseOperation.DatabaseModels.orm_models import LspMaster, Base, DlgRaw
+from DatabaseOperation.DatabaseModels.master_models import LspMaster, Base, DlgRaw
 from utils.logger_config import logger_method
 
 
 class LspMasterManager:
     """DB-backed manager for `lsp_master` rows."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, user_claims: Optional[Dict[str, Any]] = None):
         self.conn_factory = ConnectionFactory()
+        self.user_claims = user_claims
         self.conn_factory.create_all_tables(base=Base)
         self.logger = logger_method(__name__)
+
+    def _get_user_info(self) -> str:
+        """Get formatted user info string from user_claims."""
+        if not self.user_claims:
+            return "[User: system, Role: unknown]"
+        username = self.user_claims.get('username', 'unknown')
+        user_role = self.user_claims.get('role', 'unknown')
+        return f"[User: {username}, Role: {user_role}]"
 
     def insert(self, lm: LspMaster) -> Any:
         session = self.conn_factory.get_session()
@@ -21,19 +30,19 @@ class LspMasterManager:
             existing = session.query(LspMaster).filter_by(home_url=lm.home_url).one_or_none()
 
             if existing:
-                self.logger.error('LSP already exists')
+                self.logger.error(f"{self._get_user_info()} LSP already exists")
                 return None
             else:
                 existing = session.query(LspMaster).filter_by(name=lm.name).one_or_none()
                 if existing:
-                    self.logger.error('LSP already exists')
+                    self.logger.error(f"{self._get_user_info()} LSP already exists")
                     return None
 
                 row = LspMaster(name=lm.name, home_url=lm.home_url, active=True, dlg_url=lm.dlg_url,
                                 parse_hint=lm.parse_hint, fetch_hint=lm.fetch_hint, rules_json=lm.rules_json)
                 session.add(row)
             session.commit()
-            self.logger.info(f'{lm.name} LSP Added Successfully')
+            self.logger.info(f"{self._get_user_info()} {lm.name} LSP Added Successfully")
             result_dict = {"id": row.id, "name": row.name, "active": row.active, "home_url": row.home_url,
                            "dlg_url": row.dlg_url, "parse_hint": row.parse_hint, "fetch_hint": row.fetch_hint,
                            "rules_json": row.rules_json, "last_crawl_date": row.last_crawl_date}
@@ -50,7 +59,7 @@ class LspMasterManager:
             existing_lsp = session.query(LspMaster).filter_by(id=lm.id).one_or_none()
 
             if not existing_lsp:
-                self.logger.error('LSP not found')
+                self.logger.error(f"{self._get_user_info()} LSP not found")
                 return None
             else:
                 scraped = session.query(DlgRaw).filter_by(lsp_id=lm.id).one_or_none()
@@ -67,7 +76,7 @@ class LspMasterManager:
 
                 session.add(existing_lsp)
             session.commit()
-            self.logger.info(f'{lm.name} LSP Updated Successfully')
+            self.logger.info(f"{self._get_user_info()} {lm.name} LSP Updated Successfully")
             result_dict = {"id": existing_lsp.id, "name": existing_lsp.name, "active": existing_lsp.active,
                            "home_url": existing_lsp.home_url,
                            "dlg_url": existing_lsp.dlg_url, "parse_hint": existing_lsp.parse_hint,
@@ -89,10 +98,10 @@ class LspMasterManager:
                 existing.active = False
                 session.add(existing)
             else:
-                self.logger.error('LSP Not found')
+                self.logger.error(f"{self._get_user_info()} LSP Not found")
                 return 0
             session.commit()
-            self.logger.error(f'{existing.name} LSP Deleted Successfully')
+            self.logger.info(f"{self._get_user_info()} {existing.name} LSP Deleted Successfully")
         except Exception:
             session.rollback()
             raise
@@ -141,7 +150,7 @@ class LspMasterManager:
                 result.append(result_dict)
             return result, len(result)
         except Exception as ex:
-            self.logger.error(f'Exception in list_lsp_master {ex}')
+            self.logger.error(f"{self._get_user_info()} Exception in list_lsp_master {ex}")
             raise
         finally:
             session.close()

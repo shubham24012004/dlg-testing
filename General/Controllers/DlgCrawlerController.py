@@ -12,8 +12,6 @@ from General.Service.LspMasterService import LSPMasterService
 crawler_bp = Blueprint('crawler_bp', __name__)
 
 logger = logger_method(__name__)
-crawler_service = DlgCrawlerService()
-lsp_service = LSPMasterService()
 
 
 @crawler_bp.post("/api/scrape")
@@ -42,9 +40,12 @@ def handle_trigger_scrape():
 
 
 def run_scrape(lsp_id: Optional[int] = 0, user_claims: Optional[Dict[str, Any]] = None) -> int:
+    crawler_service = DlgCrawlerService(user_claims)
+    lsp_service = LSPMasterService(user_claims)
+
     sources = lsp_service.load_active(lsp_id)
     if sources:
-        crawler_service.run_scrape_sources(sources, user_claims=user_claims)
+        crawler_service.run_scrape_sources(sources)
         return len(sources)
     else:
         logger.critical('No LSP Found')

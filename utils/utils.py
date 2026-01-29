@@ -5,16 +5,16 @@ import datetime as dt
 from bs4 import BeautifulSoup
 from dateutil import parser as dateparser
 from typing import Any, Dict, List, Optional, Tuple
-from DatabaseOperation.DatabaseModels.orm_models import FetchResult
+from DatabaseOperation.DatabaseModels.master_models import FetchResult, CrawlStatus
 import pdfplumber
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-try:  # pragma: no cover - optional dependency
+try:
     from playwright.sync_api import sync_playwright
 
     PLAYWRIGHT_AVAILABLE = True
-except Exception:
+except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
 BROWSER_USER_AGENT = (
@@ -425,7 +425,7 @@ def extract_dlg_from_plain_text(
 
             if uses_regex:
                 return extract_from_regex_patterns(text, lsp_name, scrape_ts, rules)
-        except:
+        except Exception:
             pass  # Fall through to CRED-style parsing
 
     """
@@ -502,7 +502,7 @@ def extract_from_regex_patterns(
     if isinstance(as_on_config, dict) and "constant" in as_on_config:
         try:
             as_on_date = dateparser.parse(as_on_config["constant"])
-        except:
+        except Exception:
             pass
 
     lines = text.splitlines()
@@ -749,7 +749,7 @@ def normalize_rows(
         lsp_name: str,
         scrape_ts: dt.datetime,
         rules_json: Optional[str]
-) -> Tuple[List[Dict[str, Any]], bool]:
+) -> Tuple[CrawlStatus, List[Dict[str, Any]]]:
     rules = load_rules(rules_json)
     field_map = rules.get("field_map") or {}
     page_vals = page_level_values(fetch, rules)
@@ -789,107 +789,121 @@ def normalize_rows(
         return val
 
     out_rows: List[Dict[str, Any]] = []
-    for rr in raw_rows:
-        # Check if row is already normalized (has capital-case keys from plain_text parsers)
-        # Plain text parsers like extract_from_regex_patterns and parse_cred_style_dlg_plain_text
-        # return pre-normalized rows with keys: LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
-        force_include = False
-        if "Amount" in rr and "Portfolio" in rr:
-            # Row is already normalized, use directly
-            lender_clean = rr.get("Lender")
-            portfolio_clean = rr.get("Portfolio")
-            normalized_amount = rr.get("Amount")
-            ason = rr.get("AsOnTimestamp")
-            force_include = bool(rr.get("_force_include"))
-        else:
-            # Row needs normalization
-            lender_txt = get_field(rr, "lender") or page_vals.get("lender")
-            portfolio_txt = get_field(rr, "portfolio") or page_vals.get("portfolio")
-            amount_txt = get_field(rr, "amount") or page_vals.get("amount")
-            ason_txt = get_field(rr, "as_on") or page_vals.get("as_on")
-
-            # Parse and normalize amount to crores
-            parsed_amount = parse_amount_any(amount_txt)
-            normalized_amount = normalize_amount_to_crores(parsed_amount)
-
-            # Override LSP Name with the one from configuration (handles cases like CreditVidya on prefr.com)
-            # This ensures the data is saved under the correct company name from lsp_sources_latest.csv
-
-            # Clean up lender/portfolio: convert None to actual None, not string "None"
-            lender_clean = None
-            if lender_txt is not None:
-                lender_str = str(lender_txt).strip()
-                if lender_str and lender_str != "None":
-                    lender_clean = lender_str
-
-            portfolio_clean = None
-            if portfolio_txt is not None:
-                portfolio_str = str(portfolio_txt).strip()
-                if portfolio_str and portfolio_str != "None":
-                    portfolio_clean = portfolio_str
-
-            ason = parse_date_any(ason_txt)
-
-        # Detect explicit total rows from raw data (e.g., columns labelled "Grand Total")
-        raw_is_total = any(
-            isinstance(val, str) and re.search(r"\btotal\b", val, flags=re.IGNORECASE)
-            for val in rr.values()
-        )
-
-        row = {
-            "LSP Name": lsp_name,
-            "Lender": lender_clean,
-            "Portfolio": portfolio_clean,
-            "Amount": normalized_amount,
-            "AsOnTimestamp": ason,
-            "ScrapeTimestamp": scrape_ts,
-        }
-
-        if force_include:
-            row["_force_include"] = True
-
-        if raw_is_total and not force_include:
-            continue
-
-        # Skip rows where we have all None except date/scrape timestamp
-        if row["Lender"] is None and row["Portfolio"] is None and row["Amount"] is None:
-            continue
-
-        # Skip rows where we have amount but no portfolio (likely bad extraction from CIN or other non-table text)
-        if row["Portfolio"] is None and row["Amount"] is not None and row["Lender"] is None:
-            continue
-
-        out_rows.append(row)
-
-    # de-dupe
-    seen = set()
-    deduped = []
     partial = False
-    for r in out_rows:
-        k = (
-            r["LSP Name"],
-            r["Lender"],
-            r["Portfolio"],
-            r["Amount"],
-            r["AsOnTimestamp"].isoformat() if r["AsOnTimestamp"] else None
-        )
-        if k in seen:
-            continue
-        seen.add(k)
-        deduped.append(r)
+    final_data: List[Dict[str, Any]] = []
 
-    final_data = merge_partial_rows(deduped)
+    if not raw_rows:
+        return CrawlStatus.NO_DATA, final_data
 
-    # Apply forward fill if specified in rules
-    forward_fill_cols = rules.get("forward_fill") or []
-    if forward_fill_cols:
-        final_data = forward_fill_columns(final_data, forward_fill_cols)
+    if not len(raw_rows) > 0:
+        return CrawlStatus.NO_DATA, final_data
+
+    try:
+        for rr in raw_rows:
+            # Check if row is already normalized (has capital-case keys from plain_text parsers)
+            # Plain text parsers like extract_from_regex_patterns and parse_cred_style_dlg_plain_text
+            # return pre-normalized rows with keys: LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
+            force_include = False
+            if "Amount" in rr and "Portfolio" in rr:
+                # Row is already normalized, use directly
+                lender_clean = rr.get("Lender")
+                portfolio_clean = rr.get("Portfolio")
+                normalized_amount = rr.get("Amount")
+                ason = rr.get("AsOnTimestamp")
+                force_include = bool(rr.get("_force_include"))
+            else:
+                # Row needs normalization
+                lender_txt = get_field(rr, "lender") or page_vals.get("lender")
+                portfolio_txt = get_field(rr, "portfolio") or page_vals.get("portfolio")
+                amount_txt = get_field(rr, "amount") or page_vals.get("amount")
+                ason_txt = get_field(rr, "as_on") or page_vals.get("as_on")
+
+                # Parse and normalize amount to crores
+                parsed_amount = parse_amount_any(amount_txt)
+                normalized_amount = normalize_amount_to_crores(parsed_amount)
+
+                # Override LSP Name with the one from configuration (handles cases like CreditVidya on prefr.com)
+                # This ensures the data is saved under the correct company name from lsp_sources_latest.csv
+
+                # Clean up lender/portfolio: convert None to actual None, not string "None"
+                lender_clean = None
+                if lender_txt is not None:
+                    lender_str = str(lender_txt).strip()
+                    if lender_str and lender_str != "None":
+                        lender_clean = lender_str
+
+                portfolio_clean = None
+                if portfolio_txt is not None:
+                    portfolio_str = str(portfolio_txt).strip()
+                    if portfolio_str and portfolio_str != "None":
+                        portfolio_clean = portfolio_str
+
+                ason = parse_date_any(ason_txt)
+
+            # Detect explicit total rows from raw data (e.g., columns labelled "Grand Total")
+            raw_is_total = any(
+                isinstance(val, str) and re.search(r"\btotal\b", val, flags=re.IGNORECASE)
+                for val in rr.values()
+            )
+
+            row = {
+                "LSP Name": lsp_name,
+                "Lender": lender_clean,
+                "Portfolio": portfolio_clean,
+                "Amount": normalized_amount,
+                "AsOnTimestamp": ason,
+                "ScrapeTimestamp": scrape_ts,
+            }
+
+            if force_include:
+                row["_force_include"] = True
+
+            if raw_is_total and not force_include:
+                continue
+
+            # Skip rows where we have all None except date/scrape timestamp
+            if row["Lender"] is None and row["Portfolio"] is None and row["Amount"] is None:
+                continue
+
+            # Skip rows where we have amount but no portfolio (likely bad extraction from CIN or other non-table text)
+            if row["Portfolio"] is None and row["Amount"] is not None and row["Lender"] is None:
+                continue
+
+            out_rows.append(row)
+
+        # de-dupe
+        seen = set()
+        deduped = []
+        partial = False
+        for r in out_rows:
+            k = (
+                r["LSP Name"],
+                r["Lender"],
+                r["Portfolio"],
+                r["Amount"],
+                r["AsOnTimestamp"].isoformat() if r["AsOnTimestamp"] else None
+            )
+            if k in seen:
+                continue
+            seen.add(k)
+            deduped.append(r)
+
+        final_data = merge_partial_rows(deduped)
+
+        # Apply forward fill if specified in rules
+        forward_fill_cols = rules.get("forward_fill") or []
+        if forward_fill_cols:
+            final_data = forward_fill_columns(final_data, forward_fill_cols)
+    except Exception as ex:
+        error = str(ex)
+        return CrawlStatus.ERROR, final_data
 
     for r in final_data:
-        if r["Portfolio"] is None or r["Amount"] is None or r["AsOnTimestamp"] is None:
-            partial = True
-
-    return final_data, partial
+        if r["Portfolio"] is None or r["Amount"] is None:
+            return CrawlStatus.PARTIAL, final_data
+        if r["AsOnTimestamp"] is None:
+            return CrawlStatus.STALE, final_data
+    return CrawlStatus.COMPLETED, final_data
 
 
 def is_header_row(row: Dict[str, Any]) -> bool:

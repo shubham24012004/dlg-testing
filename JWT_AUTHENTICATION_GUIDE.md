@@ -27,7 +27,8 @@ check_password_hash(hashed, password)
 Replace `AuthService.VALID_USERS` dict with SQLAlchemy models:
 
 ```python
-from DatabaseOperation.DatabaseModels.orm_models import Base, User
+from DatabaseOperation.DatabaseModels.master_models import Base, User
+
 
 class User(Base):
     __tablename__ = 'users'
