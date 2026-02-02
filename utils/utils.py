@@ -677,9 +677,26 @@ def load_rules(rules_json: Optional[object]) -> Dict[str, Any]:
 
 
 def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
+    def normalize_for_matching(text: str) -> str:
+        """Normalize text for field matching by replacing special chars that may have encoding issues."""
+        # Replace rupee symbol and other currency symbols that might become ? in PostgreSQL
+        return text.replace('₹', '?').replace('₨', '?').replace('₹', '?')
+    
+    # First try exact match
     for k in keys:
         if k in rr and rr[k] is not None and str(rr[k]).strip():
             return str(rr[k]).strip()
+    
+    # Then try normalized matching (handles encoding issues like ₹ -> ?)
+    for col, v in rr.items():
+        normalized_col = normalize_for_matching(str(col).lower())
+        for k in keys:
+            normalized_key = normalize_for_matching(str(k).lower())
+            if normalized_key in normalized_col:
+                if v is not None and str(v).strip():
+                    return str(v).strip()
+    
+    # Finally try original substring matching as fallback
     for col, v in rr.items():
         lcol = str(col).lower()
         for k in keys:
@@ -692,7 +709,19 @@ def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
 def extract_by_regex(text: str, pattern: str, group: int = 1) -> Optional[str]:
     if not text or not pattern:
         return None
-    m = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+    
+    # Normalize both text and pattern to handle encoding issues (₹ -> ?)
+    # Note: ? is a regex special char, so we escape it after normalization
+    def normalize_currency(s: str) -> str:
+        return s.replace('₹', '?').replace('₨', '?')
+    
+    normalized_text = normalize_currency(text)
+    normalized_pattern = normalize_currency(pattern)
+    
+    # Escape ? to \? so it's treated as literal in regex
+    normalized_pattern = normalized_pattern.replace('?', r'\?')
+    
+    m = re.search(normalized_pattern, normalized_text, flags=re.IGNORECASE | re.DOTALL)
     if not m:
         return None
     try:
