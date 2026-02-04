@@ -83,3 +83,18 @@ class ReportsService:
         except Exception as exc:
             self.logger.exception(f"{user_info} Error fetching summaries: {exc}")
             raise
+    
+    def get_raw_data(self, lsp_id: int):
+        """Fetch LSP raw data from ReportsManager for a specific LSP ID.
+
+        Returns:
+            (list_of_dicts, count)
+        """
+        user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
+        try:
+            result, count = self.reports_manager.get_raw_data(lsp_id)
+            self.logger.info(f"{user_info} Fetched {count} raw rows for LSP ID: {lsp_id}")
+            return result, count
+        except Exception as exc:
+            self.logger.exception(f"{user_info} Error fetching raw data for LSP ID {lsp_id}: {exc}")
+            raise

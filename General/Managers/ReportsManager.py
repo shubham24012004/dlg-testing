@@ -230,3 +230,31 @@ class ReportsManager:
             raise
         finally:
             session.close()
+
+    def get_raw_data(self, lsp_id, page=None,per_page=None):
+        user_info = self._get_user_info()
+        session = self.conn_factory.get_session()
+        try:
+            query = session.query(DlgRaw).filter(DlgRaw.lsp_id == lsp_id).order_by(DlgRaw.scrape_timestamp.desc())
+            count = query.count()
+            if page and per_page:
+                query = query.offset((page - 1) * per_page).limit(per_page)
+            rows = query.all()
+            result = []
+            for r in rows:
+                result.append({
+                    "lsp_id": r.lsp_id,
+                    "lsp_name": r.lsp_name,
+                    "lender": r.lender,
+                    "portfolio": r.portfolio,
+                    "amount": float(r.amount) if r.amount is not None else 0.0,
+                    "as_on_timestamp": r.as_on_timestamp,
+                    "scrape_timestamp": r.scrape_timestamp,
+                    "complete": r.complete,
+                })
+            return result, count
+        except Exception as e:
+            self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
+            raise
+        finally:
+            session.close()
