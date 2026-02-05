@@ -20,7 +20,7 @@ export default function DashboardPage() {
         const res = await api.get("/api/dashboard/lsp_summary");
         setRows(res.data.data.result);
       } catch (err) {
-        router.replace("/login");
+        router.replace("/");
       } finally {
         setLoading(false);
       }
@@ -44,42 +44,52 @@ export default function DashboardPage() {
 
         <button
           onClick={handleLogout}
-          className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+          className="rounded bg-red-600 px-4 py-2 cursor-pointer text-sm text-white hover:bg-red-700"
         >
           Logout
         </button>
       </div>
 
       <div className="overflow-hidden rounded-lg border bg-white shadow">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-gray-100 text-left text-sm font-semibold text-gray-700">
-              <th className="border-b px-4 py-3">LSP Name</th>
-              <th className="border-b px-4 py-3">Total Amount</th>
-              <th className="border-b px-4 py-3">Portfolios</th>
-              <th className="border-b px-4 py-3">Status</th>
-              <th className="border-b px-4 py-3">Last Crawl</th>
-              <th className="border-b px-4 py-3">Actions</th>
+        <table className="w-full table-fixed border-collapse text-sm">
+          <thead className="bg-gray-100 text-gray-700">
+            <tr>
+              <th className="border-b px-4 py-3 text-left w-2/6">LSP Name</th>
+              <th className="border-b px-4 py-3 text-right w-1/6">
+                Total Amount (₹ Cr)
+              </th>
+              <th className="border-b px-4 py-3 text-center w-1/6">
+                Total No. Of Portfolios
+              </th>
+              <th className="border-b px-4 py-3 text-center w-1/6">Status</th>
+              <th className="border-b px-4 py-3 text-center w-1/6">
+                As On Date
+              </th>
+              <th className="border-b px-4 py-3 text-center w-1/6">
+                Last Crawl
+              </th>
+              <th className="border-b px-4 py-3 text-center w-1/6">Actions</th>
             </tr>
           </thead>
 
           <tbody>
             {rows.map((row) => (
-              <tr
-                key={row.lsp_id}
-                className="text-sm text-gray-700 hover:bg-gray-50"
-              >
-                <td className="border-b px-4 py-3">{row.name}</td>
-
-                <td className="border-b px-4 py-3">
-                  ₹ {row.total_amount.toLocaleString()}
+              <tr key={row.lsp_id} className="text-gray-700 hover:bg-gray-50">
+                <td className="border-b px-4 py-3 text-left truncate">
+                  {row.name}
                 </td>
 
-                <td className="border-b px-4 py-3">{row.total_portfolios}</td>
+                <td className="border-b px-4 py-3 text-right">
+                  {row.total_amount.toLocaleString()}
+                </td>
 
-                <td className="border-b px-4 py-3">
+                <td className="border-b px-4 py-3 text-center">
+                  {row.total_portfolios}
+                </td>
+
+                <td className="border-b px-4 py-3 text-center">
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
                       row.status === "COMPLETED"
                         ? "bg-green-100 text-green-700"
                         : row.status === "PARTIAL"
@@ -91,15 +101,26 @@ export default function DashboardPage() {
                   </span>
                 </td>
 
-                <td className="border-b px-4 py-3">
-                  {row.last_crawl_date
-                    ? new Date(row.last_crawl_date).toLocaleDateString()
+                <td className="border-b px-4 py-3 text-center">
+                  {row.as_on_year && row.as_on_month
+                    ? new Date(
+                        row.as_on_year,
+                        row.as_on_month,
+                        0,
+                      ).toLocaleDateString("en-GB")
                     : "-"}
                 </td>
-                <td className="border-b px-4 py-3">
+
+                <td className="border-b px-4 py-3 text-center">
+                  {row.last_crawl_date
+                    ? new Date(row.last_crawl_date).toLocaleDateString("en-GB")
+                    : "-"}
+                </td>
+
+                <td className="border-b px-4 py-3 text-center">
                   <button
                     onClick={() => router.push(`/dashboard/${row.lsp_id}`)}
-                    className="text-sm text-blue-600 hover:underline"
+                    className="text-sm font-medium text-blue-600 hover:underline cursor-pointer"
                   >
                     View Details
                   </button>
