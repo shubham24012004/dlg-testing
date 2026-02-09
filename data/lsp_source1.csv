@@ -1,2 +1,0 @@
-﻿lsp_name,disclosure_url,is_active,fetch_hint,parse_hint,rules_json
-Groww Credit,https://credit.groww.in/pages/other-disclosures,TRUE,requests,auto,"{""field_map"":{""amount"":{""keys"":[""Outstanding Amount (Rs. Crores)"",""Outstanding Amount"",""Outstanding AUM"",""Amount""]},""as_on"":{""keys"":[""Date"",""As on"",""As-on"",""As on date""]},""lender"":{""constant"":""Lender A""},""portfolio"":{""keys"":[""Lender A"",""Lender B"",""Lender C"",""Portfolio"",""Portfolio Name""],""regex"":""(Portfolio [A-Za-z0-9]+)"",""group"":1}}}"
