@@ -90,9 +90,9 @@ export default function DashboardPage() {
                 <td className="border-b px-4 py-3 text-center">
                   <span
                     className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
-                      row.status === "COMPLETED"
+                      row.status === "Completed"
                         ? "bg-green-100 text-green-700"
-                        : row.status === "PARTIAL"
+                        : row.status === "Partial"
                           ? "bg-yellow-100 text-yellow-700"
                           : "bg-red-100 text-red-700"
                     }`}

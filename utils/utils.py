@@ -87,10 +87,108 @@ def parse_date_any(s: Any) -> Optional[dt.datetime]:
     txt = str(s).strip()
     if not txt:
         return None
+    
+    # Remove ordinal suffixes (1st, 2nd, 3rd, 4th, etc.) to help dateparser
+    txt_cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', txt)
+    
     try:
-        return dateparser.parse(txt, dayfirst=True, fuzzy=True)
+        return dateparser.parse(txt_cleaned, dayfirst=True, fuzzy=True)
     except Exception:
         return None
+
+
+def calculate_previous_month_end(reference_date: Optional[dt.datetime] = None) -> dt.datetime:
+    """Calculate the last day of the previous month relative to reference_date."""
+    if reference_date is None:
+        reference_date = dt.datetime.now()
+    
+    # First day of current month
+    first_of_month = reference_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # Last day of previous month
+    last_day_prev_month = first_of_month - dt.timedelta(days=1)
+    return last_day_prev_month
+
+
+def calculate_previous_quarter_end(reference_date: Optional[dt.datetime] = None) -> dt.datetime:
+    """Calculate the last day of the previous quarter (Mar 31, Jun 30, Sep 30, Dec 31)."""
+    if reference_date is None:
+        reference_date = dt.datetime.now()
+    
+    # Determine current quarter
+    current_month = reference_date.month
+    if current_month <= 3:
+        # Q1 (Jan-Mar) -> previous quarter is Q4 of previous year (Dec 31)
+        return dt.datetime(reference_date.year - 1, 12, 31)
+    elif current_month <= 6:
+        # Q2 (Apr-Jun) -> previous quarter is Q1 (Mar 31)
+        return dt.datetime(reference_date.year, 3, 31)
+    elif current_month <= 9:
+        # Q3 (Jul-Sep) -> previous quarter is Q2 (Jun 30)
+        return dt.datetime(reference_date.year, 6, 30)
+    else:
+        # Q4 (Oct-Dec) -> previous quarter is Q3 (Sep 30)
+        return dt.datetime(reference_date.year, 9, 30)
+
+
+def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.datetime]:
+    """
+    Parse date string with a format hint.
+    
+    Format hints:
+    - DD.MM.YYYY: 31.12.2025
+    - DD-MM-YYYY: 31-12-2025
+    - DD Month YYYY: 31 December 2025, 31 Dec 2025
+    - Mon YYYY: Dec 2025 (parsed to last day of month if to_day='last' in config)
+    """
+    if not date_string:
+        return None
+    
+    date_string = date_string.strip()
+    
+    # Try format-specific parsing
+    if format_hint == "DD.MM.YYYY":
+        # Match DD.MM.YYYY
+        match = re.match(r'(\d{1,2})\.(\d{1,2})\.(\d{4})', date_string)
+        if match:
+            day, month, year = match.groups()
+            try:
+                return dt.datetime(int(year), int(month), int(day))
+            except ValueError:
+                pass
+    
+    elif format_hint == "DD-MM-YYYY":
+        # Match DD-MM-YYYY
+        match = re.match(r'(\d{1,2})-(\d{1,2})-(\d{4})', date_string)
+        if match:
+            day, month, year = match.groups()
+            try:
+                return dt.datetime(int(year), int(month), int(day))
+            except ValueError:
+                pass
+    
+    elif format_hint in ["DD Month YYYY", "DD Month YYYY with ordinal"]:
+        # Remove ordinal suffixes (st, nd, rd, th)
+        cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)', r'\1', date_string)
+        # Try parsing with dateparser
+        try:
+            return dateparser.parse(cleaned, dayfirst=True)
+        except Exception:
+            pass
+    
+    elif format_hint == "Mon YYYY":
+        # Parse month name and year, return last day of that month
+        try:
+            parsed = dateparser.parse(date_string, dayfirst=True)
+            if parsed:
+                # Get last day of the month
+                next_month = parsed.replace(day=28) + dt.timedelta(days=4)
+                last_day = next_month - dt.timedelta(days=next_month.day)
+                return last_day.replace(hour=0, minute=0, second=0, microsecond=0)
+        except Exception:
+            pass
+    
+    # Fallback to general parsing
+    return parse_date_any(date_string)
 
 
 def parse_amount_any(s: Any) -> Optional[float]:
@@ -123,7 +221,7 @@ def normalize_amount_to_crores(amount: Optional[float]) -> Optional[float]:
     # If amount is >= 100,000 (1 lakh crores, highly unlikely), assume it's in full rupees
     # 1 crore = 10,000,000 rupees
     if amount >= 100000:
-        return round(amount / 10000000, 2)
+        return round(amount / 10000000, 4)
 
     # Otherwise, assume it's already in crores
     return amount
@@ -136,6 +234,12 @@ def looks_like_pdf(fetch: FetchResult) -> bool:
 
 def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
     date_patterns = [
+        # as of 1st Jan, 2025 (ordinal + month abbreviation with comma)
+        r"as\s+of\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+,?\s+\d{4})",
+        
+        # As on 31st October 25 (ordinal + 2-digit year)
+        r"As\s+on\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{2,4})",
+        
         # As on November 30, 2025
         r"As\s+on\s+([A-Za-z]+ \d{1,2}, \d{4})",
 
@@ -147,6 +251,9 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
     ]
 
     rows: List[Dict[str, Any]] = []
+    last_valid_header = None  # Track header across pages for multi-page tables
+    ason_text_global = ""  # Track date across all pages (usually on page 1 only)
+    
     with pdfplumber.open(io.BytesIO(fetch.body)) as pdf:
         for page in pdf.pages:
             ason_text = ""
@@ -155,6 +262,13 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
                     ason_text = match.group(1)
+                    # Save the first found date to use across all pages
+                    if not ason_text_global:
+                        ason_text_global = ason_text
+            
+            # Use the globally found date if current page doesn't have one
+            if not ason_text and ason_text_global:
+                ason_text = ason_text_global
 
             tables = page.extract_tables() or []
             if not tables:
@@ -163,13 +277,37 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
             for tbl in tables:
                 if not tbl or len(tbl) < 2:
                     continue
-                header = [str(x).strip() if x else "" for x in tbl[0]]
+                    
+                # Check if first row looks like a header or data
+                first_row = [str(x).strip() if x else "" for x in tbl[0]]
+                is_continuation_page = False
+                
+                # Detect continuation pages: first row contains "Portfolio" pattern (data, not header)
+                if first_row and len(first_row) == 1:
+                    first_cell = first_row[0]
+                    # If it looks like "Portfolio X.Y" (optionally preceded by numbers/newlines), it's data
+                    # Examples: "Portfolio 6.2 -", "23\nPortfolio 8.10", "Portfolio 1.1\n-"
+                    if re.search(r'Portfolio\s+\d+\.\d+', first_cell, re.IGNORECASE):
+                        is_continuation_page = True
+                
+                if is_continuation_page and last_valid_header:
+                    # Use header from previous page and process ALL rows as data
+                    header = last_valid_header
+                    data_rows = tbl  # Include first row as data
+                else:
+                    # Normal table with header in first row
+                    header = first_row
+                    
+                    # If headers have duplicates or empties, use col_0, col_1, col_2 instead
+                    if len(header) != len(set(h for h in header if h)) or any(not h for h in header):
+                        header = [f"col_{i}" for i in range(len(header))]
+                    else:
+                        # Save this as a valid header for potential continuation pages
+                        last_valid_header = header
+                    
+                    data_rows = tbl[1:]  # Skip header row
 
-                # If headers have duplicates or empties, use col_0, col_1, col_2 instead
-                if len(header) != len(set(h for h in header if h)) or any(not h for h in header):
-                    header = [f"col_{i}" for i in range(len(header))]
-
-                for r in tbl[1:]:
+                for r in data_rows:
                     vals = [str(x).strip() if x else "" for x in r]
                     if not any(v.strip() for v in vals):
                         continue
@@ -186,6 +324,12 @@ def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dic
     """
     if not text:
         return []
+
+    # Check if this is FinAGG format
+    if "FinAGG" in text or "Portfolio OS as on" in text:
+        # Use dedicated FinAGG parser  
+        scrape_ts = dt.datetime.utcnow()
+        return parse_finagg_dlg_plain_text(text, "FinAGG Services Private Limited", scrape_ts)
 
     rows: List[Dict[str, Any]] = []
     ason_dt = parse_date_any(ason_text)
@@ -410,6 +554,10 @@ def extract_dlg_from_plain_text(
 
     text = _clean_html_to_text(html)
 
+    # Check for FinAGG-specific format first
+    if "FinAGG" in lsp_name or "Portfolio OS as on" in text:
+        return parse_finagg_dlg_plain_text(text, lsp_name, scrape_ts)
+
     # Check if rules specify regex-based extraction
     if rules_json:
         try:
@@ -460,16 +608,27 @@ def extract_finsall_grand_total(
         return []
 
     as_on_cfg = rules.get("field_map", {}).get("as_on") if rules else None
-    as_on_txt = None
+    as_on_dt = None
     if isinstance(as_on_cfg, dict):
-        as_on_txt = as_on_cfg.get("constant")
+        # Try constant first
+        if "constant" in as_on_cfg:
+            as_on_dt = parse_date_any(as_on_cfg["constant"])
+        # Fallback disabled - if no date found, leave as None
+        # elif "fallback" in as_on_cfg:
+        #     fallback_type = as_on_cfg["fallback"]
+        #     if fallback_type == "previous_month_end":
+        #         as_on_dt = calculate_previous_month_end(scrape_ts)
+        #     elif fallback_type == "previous_quarter_end":
+        #         as_on_dt = calculate_previous_quarter_end(scrape_ts)
+    elif isinstance(as_on_cfg, str):
+        as_on_dt = parse_date_any(as_on_cfg)
 
     return [{
         "LSP Name": lsp_name,
         "Lender": None,
         "Portfolio": f"Grand Total ({portfolio_count} portfolios)",
         "Amount": amount,
-        "AsOnTimestamp": parse_date_any(as_on_txt),
+        "AsOnTimestamp": as_on_dt,
         "ScrapeTimestamp": scrape_ts,
         "_force_include": True,
     }]
@@ -497,13 +656,31 @@ def extract_from_regex_patterns(
     if not all([lender_pattern, portfolio_pattern, amount_pattern]):
         return []
 
-    # Parse constant date if provided
+    # Parse date with support for regex, constant, fallback
     as_on_date = None
-    if isinstance(as_on_config, dict) and "constant" in as_on_config:
-        try:
-            as_on_date = dateparser.parse(as_on_config["constant"])
-        except Exception:
-            pass
+    if isinstance(as_on_config, dict):
+        # Try regex extraction first
+        if "regex" in as_on_config:
+            as_on_regex = as_on_config["regex"]
+            match = re.search(as_on_regex, text, re.IGNORECASE)
+            if match:
+                date_str = match.group(1).strip()
+                as_on_date = parse_date_any(date_str)
+        
+        # Try constant (backward compatibility)
+        if not as_on_date and "constant" in as_on_config:
+            try:
+                as_on_date = dateparser.parse(as_on_config["constant"])
+            except Exception:
+                pass
+        
+        # Fallback disabled - if no date found, leave as None
+        # if not as_on_date and "fallback" in as_on_config:
+        #     fallback_type = as_on_config["fallback"]
+        #     if fallback_type == "previous_month_end":
+        #         as_on_date = calculate_previous_month_end(scrape_ts)
+        #     elif fallback_type == "previous_quarter_end":
+        #         as_on_date = calculate_previous_quarter_end(scrape_ts)
 
     lines = text.splitlines()
     current_lender = None
@@ -655,6 +832,99 @@ def parse_cred_style_dlg_plain_text(
     return deduped
 
 
+def parse_finagg_dlg_plain_text(
+        text: str,
+        lsp_name: str,
+        scrape_ts: dt.datetime
+) -> List[Dict[str, Any]]:
+    """
+    Parse FinAGG-style DLG plain text disclosures.
+    
+    Text pattern from pdfplumber:
+    Portfolio l 2,30,25,89,904 No  <- Portfolio 1 with amount on same line
+    1,47,83,34,565                 <- standalone amount (belongs to Portfolio 2)
+    Portfolio 2 No                 <- Portfolio 2 with only FLDG
+    1,37,94,55,277                 <- standalone amount (belongs to Portfolio 3)
+    Portfolio 3 Yes                <- Portfolio 3 with only FLDG
+    ...
+   
+ Portfolio 11 4,75,33,000 Yes   <- Portfolio 11 with amount on same line
+    1,23,72,947                    <- standalone amount (belongs to Portfolio 12)
+    Portfolio 12 No                <- Portfolio 12 with only FLDG
+    
+    Key insight: Standalone amounts appear BEFORE the portfolio line they belong to!
+    """
+    
+    rows: List[Dict[str, Any]] = []
+    
+    # Extract date first
+    as_on_date = None
+    date_match = re.search(r"Portfolio OS as on ([0-9]{1,2}-[0-9]{1,2}-[0-9]{4})", text, re.IGNORECASE)
+    if date_match:
+        date_str = date_match.group(1)
+        as_on_date = parse_date_any(date_str)
+    
+    # Split into lines
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    
+    pending_amount = None  # Amount from previous line to use with next portfolio
+    
+    for i, line in enumerate(lines):
+        # Check if this is a standalone amount line (to be used with NEXT portfolio)
+        if re.match(r"^[0-9,\s]+$", line) and 'Total' not in lines[i-1] if i > 0 else True:
+            clean_amount = line.replace(',', '').replace(' ', '')
+            if len(clean_amount) >= 6:  # Reasonable amount size
+                pending_amount = clean_amount
+                continue
+        
+        # Match lines starting with "Portfolio" - handle both "Portfolio9" and "Portfolio 9"
+        match = re.match(r"Portfolio\s*([0-9l]+)(?:\s+([0-9,\s]+))?\s*(?:(Yes|No))?\s*$", line, re.IGNORECASE)
+        
+        if match:
+            portfolio_num = match.group(1)
+            # Handle OCR artifacts
+            if portfolio_num.lower() == 'l':
+                portfolio_num = '1'
+            
+            amount_str = match.group(2)  # Amount on same line (if present)
+            fldg = match.group(3)  # FLDG status
+            
+            # Determine the amount to use
+            if amount_str:
+                # Amount is on the same line
+                final_amount_str = amount_str
+                pending_amount = None  # Don't use pending since we have one here
+            elif pending_amount:
+                # Use the pending amount from previous line
+                final_amount_str = pending_amount
+                pending_amount = None
+            else:
+                # No amount available, skip this portfolio
+                continue
+            
+            try:
+                # Clean and parse amount
+                clean_amount = final_amount_str.replace(',', '').replace(' ', '')
+                amount = float(clean_amount)
+                
+                # Skip the Total row
+                if 'total' in portfolio_num.lower() or amount > 7000000000:  # Total is usually very large
+                    continue
+                
+                rows.append({
+                    "LSP Name": lsp_name,
+                    "Lender": "FinAGG Services Private Limited",
+                    "Portfolio": f"Portfolio {portfolio_num}",
+                    "Amount": amount,
+                    "AsOnTimestamp": as_on_date,
+                    "ScrapeTimestamp": scrape_ts
+                })
+            except ValueError:
+                pass  # Skip if amount can't be parsed
+    
+    return rows
+
+
 # -----------------------------
 # RULE-DRIVEN NORMALIZATION
 # -----------------------------
@@ -710,18 +980,14 @@ def extract_by_regex(text: str, pattern: str, group: int = 1) -> Optional[str]:
     if not text or not pattern:
         return None
     
-    # Normalize both text and pattern to handle encoding issues (₹ -> ?)
-    # Note: ? is a regex special char, so we escape it after normalization
-    def normalize_currency(s: str) -> str:
+    # Only normalize text for currency symbol encoding issues (₹ -> ?)
+    # Don't touch the pattern - let it be used as-is
+    def normalize_currency_in_text(s: str) -> str:
         return s.replace('₹', '?').replace('₨', '?')
     
-    normalized_text = normalize_currency(text)
-    normalized_pattern = normalize_currency(pattern)
+    normalized_text = normalize_currency_in_text(text)
     
-    # Escape ? to \? so it's treated as literal in regex
-    normalized_pattern = normalized_pattern.replace('?', r'\?')
-    
-    m = re.search(normalized_pattern, normalized_text, flags=re.IGNORECASE | re.DOTALL)
+    m = re.search(pattern, normalized_text, flags=re.IGNORECASE | re.DOTALL)
     if not m:
         return None
     try:
@@ -788,7 +1054,7 @@ def normalize_rows(
         "portfolio": ["Portfolio", "DLG set", "Cohort", "Set", "Portfolio Name"],
         "amount": ["Amount", "Outstanding AUM", "AUM", "Outstanding", "DLG Amount", "Outstanding AUM (₹ crores)",
                    "Outstanding AUM (INR crore)"],
-        "as_on": ["As on", "As-on", "AsOn", "As on date", "Date", "AsOnTimestamp"],
+        "as_on": ["ason", "As on", "As-on", "AsOn", "As on date", "Date", "AsOnTimestamp"],
     }
 
     def get_field(raw_row: Dict[str, Any], fname: str) -> Optional[str]:
@@ -802,8 +1068,129 @@ def normalize_rows(
         if not isinstance(spec, dict):
             spec = {}
 
+        # Handle constant value
         if "constant" in spec and spec["constant"] is not None:
             return str(spec["constant"]).strip()
+        
+        # Handle regex-based column matching (when regex is meant to find the COLUMN, not extract from value)
+        # This is the case when we have {"regex": "..."} without "keys"
+        if "regex" in spec and "keys" not in spec and fname != "as_on":
+            regex_pattern = spec["regex"]
+            for col_name, col_value in raw_row.items():
+                if re.search(regex_pattern, str(col_name), flags=re.IGNORECASE):
+                    # Found the column, return its value
+                    if col_value is not None and str(col_value).strip():
+                        return str(col_value).strip()
+            return None
+        
+        # Handle dynamic date extraction for as_on field
+        # Only process if spec has actual configuration (not just an empty dict)
+        if fname == "as_on" and isinstance(spec, dict) and spec:
+            extracted_date = None
+            
+            # Try to extract date from column names (not values)
+            if "extract_regex" in spec:
+                extract_from = spec.get("extract_from", "amount_column")
+                date_format = spec.get("date_format", None)
+                
+                # Determine which column name to extract from
+                source_column_name = None
+                if extract_from == "amount_column":
+                    # Get the amount field spec to find the column name
+                    amount_spec = field_map.get("amount")
+                    if isinstance(amount_spec, str):
+                        source_column_name = amount_spec
+                    elif isinstance(amount_spec, dict):
+                        # If amount spec has a regex (for column matching), use it
+                        if "regex" in amount_spec and "keys" not in amount_spec:
+                            regex_pattern = amount_spec["regex"]
+                            for col_name in raw_row.keys():
+                                if re.search(regex_pattern, str(col_name), flags=re.IGNORECASE):
+                                    source_column_name = col_name
+                                    break
+                        else:
+                            # Try to find matching column in raw_row using keys
+                            keys = amount_spec.get("keys") or defaults.get("amount", [])
+                            for col_name in raw_row.keys():
+                                for key in keys:
+                                    if str(key).lower() in str(col_name).lower():
+                                        source_column_name = col_name
+                                        break
+                                if source_column_name:
+                                    break
+                
+                elif extract_from == "portfolio_column":
+                    # Get the portfolio field spec to find the column name
+                    portfolio_spec = field_map.get("portfolio")
+                    if isinstance(portfolio_spec, str):
+                        source_column_name = portfolio_spec
+                    elif isinstance(portfolio_spec, dict):
+                        # If portfolio spec has a regex (for column matching), use it
+                        if "regex" in portfolio_spec and "keys" not in portfolio_spec:
+                            regex_pattern = portfolio_spec["regex"]
+                            for col_name in raw_row.keys():
+                                if re.search(regex_pattern, str(col_name), flags=re.IGNORECASE):
+                                    source_column_name = col_name
+                                    break
+                        else:
+                            # Try to find matching column in raw_row using keys
+                            keys = portfolio_spec.get("keys") or defaults.get("portfolio", [])
+                            for col_name in raw_row.keys():
+                                for key in keys:
+                                    if str(key).lower() in str(col_name).lower():
+                                        source_column_name = col_name
+                                        break
+                                if source_column_name:
+                                    break
+                
+                # Try to extract date from the column name using regex
+                if source_column_name:
+                    extracted = extract_by_regex(source_column_name, spec["extract_regex"], group=1)
+                    if extracted:
+                        # Parse with format hint if provided
+                        if date_format:
+                            parsed_date = parse_date_with_format(extracted, date_format)
+                            if parsed_date:
+                                extracted_date = parsed_date.strftime("%Y-%m-%d")
+                        else:
+                            # Try general parsing
+                            parsed_date = parse_date_any(extracted)
+                            if parsed_date:
+                                extracted_date = parsed_date.strftime("%Y-%m-%d")
+            
+            # Handle extract_from_button for SaveIN (button text contains date)
+            if not extracted_date and spec.get("extract_from_button"):
+                # This would be handled by the playwright pre-click logic
+                # The button text might be in page_vals or we fall back
+                pass
+            
+            # If extraction succeeded, return it
+            if extracted_date:
+                return extracted_date
+            
+            # If no explicit extraction method worked, try standard field extraction first
+            # (this picks up dates from PDF 'ason' field, HTML date columns, etc.)
+            if not extracted_date:
+                keys = spec.get("keys") or defaults[fname]
+                standard_val = pick_by_keys(raw_row, keys)
+                if standard_val:
+                    return standard_val
+            
+            # Fallback disabled - if no date found, return None instead of calculating fallback
+            # This ensures data accuracy - only actual dates from pages are used
+            # if "fallback" in spec:
+            #     fallback_type = spec["fallback"]
+            #     if fallback_type == "previous_month_end":
+            #         fallback_date = calculate_previous_month_end(scrape_ts)
+            #         return fallback_date.strftime("%Y-%m-%d")
+            #     elif fallback_type == "previous_quarter_end":
+            #         fallback_date = calculate_previous_quarter_end(scrape_ts)
+            #         return fallback_date.strftime("%Y-%m-%d")
+            
+            # If we processed as_on but found nothing, return None (don't fall through to standard extraction)
+            return None
+        
+        # Standard field extraction
         keys = spec.get("keys") or defaults[fname]
         val = pick_by_keys(raw_row, keys)
         if val and spec.get("regex"):
@@ -930,8 +1317,9 @@ def normalize_rows(
     for r in final_data:
         if r["Portfolio"] is None or r["Amount"] is None:
             return CrawlStatus.PARTIAL, final_data
-        if r["AsOnTimestamp"] is None:
-            return CrawlStatus.STALE, final_data
+        # Removed STALE check - null dates are acceptable when no date is found on page
+        # if r["AsOnTimestamp"] is None:
+        #     return CrawlStatus.STALE, final_data
     return CrawlStatus.COMPLETED, final_data
 
 
@@ -944,11 +1332,6 @@ def is_header_row(row: Dict[str, Any]) -> bool:
     lender = row.get("Lender")
     amount = row.get("Amount")
 
-    if not portfolio:
-        return False
-
-    portfolio_lower = str(portfolio).lower().strip()
-
     # Exact match header keywords (must be exact match, not just contain)
     exact_header_keywords = [
         "portfolio", "lender", "amount", "outstanding", "aum", "dlg",
@@ -958,10 +1341,12 @@ def is_header_row(row: Dict[str, Any]) -> bool:
     ]
 
     # Check if portfolio field is exactly a header keyword
-    if portfolio_lower in exact_header_keywords:
-        return True
+    if portfolio:
+        portfolio_lower = str(portfolio).lower().strip()
+        if portfolio_lower in exact_header_keywords:
+            return True
 
-    # Check if lender field is also exactly a header keyword
+    # Check if lender field is exactly a header keyword
     if lender:
         lender_lower = str(lender).lower().strip()
         if lender_lower in exact_header_keywords:

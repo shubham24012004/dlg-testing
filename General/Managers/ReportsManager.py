@@ -192,38 +192,44 @@ class ReportsManager:
         user_info = self._get_user_info()
         session = self.conn_factory.get_session()
         try:
-            # Subquery: latest last_crawl_date per lsp_id
+            # Subquery to rank summaries by last_crawl_date descending for each lsp_id
             subq = (
                 session.query(
-                    LspSummary.lsp_id.label("lsp_id"),
-                    func.max(LspSummary.last_crawl_date).label("max_last_crawl")
+                    LspSummary,
+                    func.row_number()
+                    .over(
+                        partition_by=LspSummary.lsp_id,
+                        order_by=[
+                            LspSummary.last_crawl_date.desc(),
+                            LspSummary.scrape_year.desc(),
+                            LspSummary.scrape_month.desc(),
+                        ],
+                    )
+                    .label("rn"),
                 )
-                .group_by(LspSummary.lsp_id)
                 .subquery()
             )
 
-            # Join to LspSummary to get the full row corresponding to the latest crawl per lsp_id
-            query = (
-                session.query(LspSummary)
-                .join(subq, (LspSummary.lsp_id == subq.c.lsp_id) & (LspSummary.last_crawl_date == subq.c.max_last_crawl))
-                .order_by(LspSummary.lsp_id.asc())
-            )
+            # Query to select only the top-ranked row for each lsp_id
+            query = session.query(subq).filter(subq.c.rn == 1).order_by(subq.c.lsp_id.asc())
 
             rows = query.all()
             result = []
             for r in rows:
-                result.append({
-                    "lsp_id": r.lsp_id,
-                    "name": r.name,
-                    "total_portfolios": r.total_portfolios,
-                    "total_amount": float(r.total_amount) if r.total_amount is not None else 0.0,
-                    "as_on_year": r.as_on_year,
-                    "as_on_month": r.as_on_month,
-                    "scrape_year": r.scrape_year,
-                    "scrape_month": r.scrape_month,
-                    "status": r.status,
-                    "last_crawl_date": r.last_crawl_date,
-                })
+                result.append(
+                    {
+                        "lsp_id": r.lsp_id,
+                        "name": r.name,
+                        "total_portfolios": r.total_portfolios,
+                        "total_amount": float(r.total_amount) if r.total_amount is not None else 0.0,
+                        "as_on_year": r.as_on_year,
+                        "as_on_month": r.as_on_month,
+                        "scrape_year": r.scrape_year,
+                        "scrape_month": r.scrape_month,
+                        "status": r.status,
+                        "last_crawl_date": r.last_crawl_date,
+                    }
+                )
             return result, len(result)
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP summaries: {e}")

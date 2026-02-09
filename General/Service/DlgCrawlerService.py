@@ -273,7 +273,18 @@ class DlgCrawlerService:
         as_on_cfg = field_map.get("as_on")
         as_on_dt = None
         if isinstance(as_on_cfg, dict):
-            as_on_dt = parse_date_any(as_on_cfg.get("constant"))
+            # Try constant first
+            if "constant" in as_on_cfg:
+                as_on_dt = parse_date_any(as_on_cfg.get("constant"))
+            # Try fallback if no constant
+            elif "fallback" in as_on_cfg:
+                fallback_type = as_on_cfg["fallback"]
+                if fallback_type == "previous_month_end":
+                    from utils.utils import calculate_previous_month_end
+                    as_on_dt = calculate_previous_month_end(scrape_ts)
+                elif fallback_type == "previous_quarter_end":
+                    from utils.utils import calculate_previous_quarter_end
+                    as_on_dt = calculate_previous_quarter_end(scrape_ts)
         elif isinstance(as_on_cfg, str):
             as_on_dt = parse_date_any(as_on_cfg)
 
