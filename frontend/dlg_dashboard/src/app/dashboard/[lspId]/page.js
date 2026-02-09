@@ -9,6 +9,7 @@ export default function LspRawPage() {
   const router = useRouter();
 
   const [rows, setRows] = useState([]);
+  const [lspName, setLspName] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,10 +18,13 @@ export default function LspRawPage() {
         const res = await api.get("/api/dashboard/lsp_raw", {
           params: { lsp_id: lspId },
         });
-
-        setRows(res.data.data.result);
+        const result = res.data.data.result;
+        setRows(result);
+        if (result.length > 0) {
+          setLspName(result[0].lsp_name);
+        }
       } catch (err) {
-        router.replace("/login");
+        router.replace("/");
       } finally {
         setLoading(false);
       }
@@ -40,21 +44,19 @@ export default function LspRawPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      {/* HEADER */}
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-semibold text-gray-800">
-          LSP Raw Data (ID: {lspId})
+          DLG of {lspName || `LSP ID ${lspId}`}
         </h2>
 
         <button
           onClick={() => router.back()}
-          className="rounded border bg-gray-500 hover:bg-gray-700 px-4 py-2 text-sm text-white"
+          className="rounded border bg-gray-500 hover:bg-gray-700 px-4 py-2 text-sm text-white cursor-pointer"
         >
           ← Back
         </button>
       </div>
 
-      {/* TABLE */}
       <div className="overflow-x-auto rounded-lg border bg-white shadow">
         <table className="w-full table-fixed border-collapse text-sm">
           <thead className="bg-gray-100 text-gray-700">
@@ -102,7 +104,15 @@ export default function LspRawPage() {
                 </td>
 
                 <td className="border-b px-4 py-2 text-center">
-                  <span className="inline-block rounded bg-gray-200 px-3 py-1 text-xs">
+                  <span
+                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
+                      row.complete === "Completed"
+                        ? "bg-green-100 text-green-700"
+                        : row.complete === "Partial"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-red-100 text-red-700"
+                    }`}
+                  >
                     {row.complete}
                   </span>
                 </td>
@@ -111,11 +121,11 @@ export default function LspRawPage() {
           </tbody>
         </table>
 
-        {rows.length === 0 && (
+        {rows.length === 0 ? (
           <div className="p-6 text-center text-gray-500">
             No raw records found
           </div>
-        )}
+        ):null}
       </div>
     </div>
   );

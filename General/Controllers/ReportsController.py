@@ -52,10 +52,10 @@ def summarize_lsp():
             end_date = today.replace(day=15)
             logger.info(f"{user_info} Using default end_date: {end_date.date()}")
 
-        # Normalize dates using pandas
+        # Normalize dates using pandas (dayfirst=True for DD/MM/YYYY or DD-MM-YYYY format)
         try:
-            start_dt = pd.to_datetime(start_date)
-            end_dt = pd.to_datetime(end_date)
+            start_dt = pd.to_datetime(start_date, dayfirst=True)
+            end_dt = pd.to_datetime(end_date, dayfirst=True)
         except Exception as e:
             logger.warning(f"{user_info} Invalid date format: {e}")
             return jsonify(
