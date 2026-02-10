@@ -79,10 +79,16 @@ class DlgCrawlerService:
             return CrawlStatus.MISSING, None, None , []
 
         fetch = self._execute_fetch(source, pre_click_js)
-
+        
+        # For OCR with HTML→PDF rendering, extract page-level values (like dates) from HTML before rendering
+        html_page_values = {}
         if source.parse_hint == "ocr_simple" and not looks_like_pdf(fetch):
             render_pdf = bool(simple_cfg.get("render_pdf"))
             if render_pdf:
+                # Extract date/lender info from HTML before it's converted to PDF
+                from utils.utils import page_level_values
+                html_page_values = page_level_values(fetch, rules)
+                
                 fetch = render_url_to_pdf(
                     url=source.dlg_url,
                     timeout_ms=self._coerce_int(simple_cfg.get("render_timeout_ms")) or 120_000,
@@ -99,6 +105,7 @@ class DlgCrawlerService:
             fetch=fetch,
             rules=rules,
             scrape_ts=scrape_ts,
+            html_page_values=html_page_values,
         )
 
         if not raw_rows and source.name.lower().startswith("finsall"):
@@ -187,13 +194,14 @@ class DlgCrawlerService:
                     fetch: FetchResult,
                     rules: Dict[str, Any],
                     scrape_ts: dt.datetime,
+                    html_page_values: Optional[Dict[str, Any]] = None,
                     ) -> List[Dict[str, Any]]:
         parse_hint = (source.parse_hint or "auto").lower()
         if parse_hint == "plain_text":
             return extract_dlg_from_plain_text(fetch.body, lsp_name=source.name, scrape_ts=scrape_ts,
                                                rules_json=source.rules_json)
         if parse_hint == "ocr_simple":
-            return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules)
+            return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules, html_page_values or {})
         if parse_hint == "pdf_table" or looks_like_pdf(fetch):
             return extract_from_pdf(fetch)
         if parse_hint == "html_table":
@@ -237,6 +245,7 @@ class DlgCrawlerService:
             lsp_name: str,
             scrape_ts: dt.datetime,
             rules: Dict[str, Any],
+            html_page_values: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         if not looks_like_pdf(fetch):
             raise RuntimeError("parse_hint=ocr_simple requires a PDF disclosure")
@@ -272,7 +281,12 @@ class DlgCrawlerService:
         field_map = rules.get("field_map") or {}
         as_on_cfg = field_map.get("as_on")
         as_on_dt = None
-        if isinstance(as_on_cfg, dict):
+        
+        # Try HTML page-level values first (extracted before render_pdf)
+        if html_page_values.get("as_on"):
+            as_on_dt = parse_date_any(html_page_values["as_on"])
+        # Then try field_map config
+        elif isinstance(as_on_cfg, dict):
             # Try constant first
             if "constant" in as_on_cfg:
                 as_on_dt = parse_date_any(as_on_cfg.get("constant"))
