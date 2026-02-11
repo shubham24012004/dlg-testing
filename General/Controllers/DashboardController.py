@@ -64,7 +64,6 @@ def all_lsp_all_summary():
         lsp_id = None
         payload = request.get_json(silent=True)
 
-
         if payload:
             start_year = payload.get('start_year')
             end_year = payload.get('end_year')
