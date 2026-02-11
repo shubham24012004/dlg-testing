@@ -49,14 +49,63 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
         context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=header_overrides)
         page = context.new_page()
         page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+        
+        final_url = url
         if pre_click_js:
-            page.evaluate(pre_click_js)
+            # Execute JavaScript - it may return a URL to navigate to
+            result = page.evaluate(pre_click_js)
+            
+            # If JavaScript returns a URL string, handle it appropriately
+            if result and isinstance(result, str) and (result.startswith('http://') or result.startswith('https://')):
+                final_url = result
+                
+                # If it's a PDF, close browser and download directly
+                if final_url.lower().endswith('.pdf'):
+                    context.close()
+                    browser.close()
+                    headers = {**BROWSER_HEADERS, "User-Agent": BROWSER_USER_AGENT}
+                    response = requests.get(final_url, headers=headers, timeout=40)
+                    return FetchResult(
+                        url=final_url,
+                        status_code=response.status_code,
+                        content_type="application/pdf",
+                        body=response.content,
+                        fetch_mode_used="playwright+requests",
+                    )
+                else:
+                    # Navigate to the returned URL (non-PDF)
+                    page.goto(final_url, wait_until="networkidle", timeout=timeout_ms)
+            else:
+                # JavaScript didn't return a URL, just wait for any navigation it triggered
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5000)
+                except:
+                    pass
+            
             page.wait_for_timeout(2000)
+            final_url = page.url
+        
+        # Check if we're on a PDF page
+        if final_url.lower().endswith('.pdf'):
+            # We're on a PDF - download it using requests
+            context.close()
+            browser.close()
+            headers = {**BROWSER_HEADERS, "User-Agent": BROWSER_USER_AGENT}
+            response = requests.get(final_url, headers=headers, timeout=40)
+            return FetchResult(
+                url=final_url,
+                status_code=response.status_code,
+                content_type="application/pdf",
+                body=response.content,
+                fetch_mode_used="playwright+requests",
+            )
+        
+        # Otherwise return HTML content
         html = page.content().encode("utf-8", errors="ignore")
         context.close()
         browser.close()
         return FetchResult(
-            url=url,
+            url=final_url,
             status_code=200,
             content_type="text/html; charset=utf-8",
             body=html,
@@ -1221,10 +1270,11 @@ def normalize_rows(
             # return pre-normalized rows with keys: LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
             force_include = False
             if "Amount" in rr and "Portfolio" in rr:
-                # Row is already normalized, use directly
+                # Row is already normalized, but still need to normalize amount to crores
                 lender_clean = rr.get("Lender")
                 portfolio_clean = rr.get("Portfolio")
-                normalized_amount = rr.get("Amount")
+                # Apply amount normalization to pre-normalized rows too
+                normalized_amount = normalize_amount_to_crores(rr.get("Amount"))
                 ason = rr.get("AsOnTimestamp")
                 force_include = bool(rr.get("_force_include"))
             else:
