@@ -69,6 +69,7 @@ class DlgCrawlerManager:
                         amount_val = float(row.amount)
                     else:
                         parsed = parse_amount_any(row.amount)
+                        parsed = parse_amount_any(row.amount)
                         if parsed is not None:
                             amount_val = normalize_amount_to_crores(parsed)
 

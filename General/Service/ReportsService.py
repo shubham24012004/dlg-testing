@@ -69,7 +69,7 @@ class ReportsService:
             self.logger.exception(f"{user_info} LSP summarization failed: {exc}")
             raise
 
-    def get_summaries(self):
+    def get_latest_summary(self):
         """Fetch LSP summaries from ReportsManager filtered by last_crawl_date.
 
         Returns:
@@ -77,7 +77,28 @@ class ReportsService:
         """
         user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
         try:
-            result, count = self.reports_manager.get_summaries()
+            result, count = self.reports_manager.get_latest_summary()
+            self.logger.info(f"{user_info} Fetched {count} summary rows")
+            return result, count
+        except Exception as exc:
+            self.logger.exception(f"{user_info} Error fetching summaries: {exc}")
+            raise
+
+    def get_all_summaries(self, start_year: Optional[int] = None, end_year: Optional[int] = None,
+                          start_month: Optional[int] = None, end_month: Optional[int] = None,
+                          lsp_id: Optional[int] = None):
+        """Fetch LSP summaries from ReportsManager filtered by last_crawl_date.
+
+        Returns:
+            (list_of_dicts, count)
+        """
+        user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
+        try:
+            result, count = self.reports_manager.get_all_summaries(start_year=start_year,
+                                                                   end_year=end_year,
+                                                                   start_month=start_month,
+                                                                   end_month=end_month,
+                                                                   lsp_id=lsp_id)
             self.logger.info(f"{user_info} Fetched {count} summary rows")
             return result, count
         except Exception as exc:

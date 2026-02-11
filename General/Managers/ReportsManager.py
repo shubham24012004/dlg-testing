@@ -84,12 +84,11 @@ class ReportsManager:
             if grp['status'].notna().any():
                 status = CrawlStatus(grp['status'].iloc[0])
 
-            if status in {CrawlStatus.COMPLETED, CrawlStatus.PARTIAL}:
-                total_amount = float(grp["amount"].fillna(0.0).sum())
-                if "portfolio" in grp.columns:
-                    total_portfolios = int(grp["portfolio"].nunique(dropna=True))
-                else:
-                    total_portfolios = int(grp.shape[0])
+            total_amount = float(grp["amount"].fillna(0.0).sum())
+            if "portfolio" in grp.columns:
+                total_portfolios = int(grp["portfolio"].nunique(dropna=True))
+            else:
+                total_portfolios = int(grp.shape[0])
 
             last_scrape = None
             if grp["scrape_timestamp"].notna().any():
@@ -108,8 +107,8 @@ class ReportsManager:
                 as_on_year = int(last_ason.year)
                 as_on_month = int(last_ason.month)
             else:
-                as_on_year = int(last_scrape.year)
-                as_on_month = int(last_scrape.month)
+                as_on_year = 0
+                as_on_month = 0
 
             # Validate: as_on_timestamp should be from the previous month of scrape_timestamp
             # If not, mark status as "Stale"
@@ -183,7 +182,50 @@ class ReportsManager:
         finally:
             session.close()
 
-    def get_summaries(self):
+    def get_all_summaries(self, start_year: Optional[int] = None, end_year: Optional[int] = None,
+                          start_month: Optional[int] = None, end_month: Optional[int] = None,
+                          lsp_id: Optional[int] = None):
+        """Return all LspSummary row per `lsp_id` between the selected year and month).
+
+        Returns:
+            (list_of_dicts, count)
+        """
+        user_info = self._get_user_info()
+        session = self.conn_factory.get_session()
+        try:
+            query = session.query(LspSummary)
+            if lsp_id:
+                query = query.filter(LspSummary.lsp_id == lsp_id)
+
+            query = query.filter(start_year <= LspSummary.scrape_year).filter(
+                LspSummary.scrape_year <= end_year).filter(start_month <= LspSummary.scrape_month).filter(
+                LspSummary.scrape_month <= end_month)
+
+            rows = query.all()
+            result = []
+            for r in rows:
+                result.append(
+                    {
+                        "lsp_id": r.lsp_id,
+                        "name": r.name,
+                        "total_portfolios": r.total_portfolios,
+                        "total_amount": float(r.total_amount) if r.total_amount is not None else 0.0,
+                        "as_on_year": r.as_on_year,
+                        "as_on_month": r.as_on_month,
+                        "scrape_year": r.scrape_year,
+                        "scrape_month": r.scrape_month,
+                        "status": r.status,
+                        "last_crawl_date": r.last_crawl_date,
+                    }
+                )
+            return result, len(result)
+        except Exception as e:
+            self.logger.exception(f"{user_info} Error fetching LSP summaries: {e}")
+            raise
+        finally:
+            session.close()
+
+    def get_latest_summary(self):
         """Return one LspSummary row per `lsp_id` using the latest `last_crawl_date` (timestamp included).
 
         Returns:
@@ -237,7 +279,7 @@ class ReportsManager:
         finally:
             session.close()
 
-    def get_raw_data(self, lsp_id, page=None,per_page=None):
+    def get_raw_data(self, lsp_id, page=None, per_page=None):
         user_info = self._get_user_info()
         session = self.conn_factory.get_session()
         try:

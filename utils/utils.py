@@ -1367,9 +1367,8 @@ def normalize_rows(
     for r in final_data:
         if r["Portfolio"] is None or r["Amount"] is None:
             return CrawlStatus.PARTIAL, final_data
-        # Removed STALE check - null dates are acceptable when no date is found on page
-        # if r["AsOnTimestamp"] is None:
-        #     return CrawlStatus.STALE, final_data
+        if r["AsOnTimestamp"] is None:
+            return CrawlStatus.STALE, final_data
     return CrawlStatus.COMPLETED, final_data
 
 
