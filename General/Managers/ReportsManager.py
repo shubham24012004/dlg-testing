@@ -72,11 +72,32 @@ class ReportsManager:
             df["as_on_timestamp"] = pd.to_datetime(df["as_on_timestamp"], errors="coerce")
         df["scrape_timestamp"] = pd.to_datetime(df["scrape_timestamp"], errors="coerce")
 
-        # group by lsp_id and lsp_name
-        grouped = df.groupby(["lsp_id", "lsp_name"])
+        # Add a column to determine the month window each record belongs to
+        # Records between 8th of month X to 8th of month X+1 belong to month X
+        def get_month_window(ts):
+            """Return (year, month) for the month window this timestamp belongs to."""
+            if pd.isna(ts):
+                return None
+            day = ts.day
+            month = ts.month
+            year = ts.year
+            # If day >= 8, this record belongs to the current month window
+            # If day < 8, it belongs to the previous month window
+            if day < 8:
+                if month == 1:
+                    return (year - 1, 12)
+                else:
+                    return (year, month - 1)
+            else:
+                return (year, month)
+
+        df["month_window"] = df["scrape_timestamp"].apply(get_month_window)
+
+        # group by lsp_id, lsp_name, and month_window
+        grouped = df.groupby(["lsp_id", "lsp_name", "month_window"])
 
         summaries = []
-        for (lsp_id, name), grp in grouped:
+        for (lsp_id, name, month_window), grp in grouped:
             status: CrawlStatus = CrawlStatus.MISSING
             total_amount = 0.0
             total_portfolios = 0
@@ -98,11 +119,10 @@ class ReportsManager:
             if grp["as_on_timestamp"].notna().any():
                 last_ason = grp["as_on_timestamp"].max()
 
-            scrape_month = int(last_scrape.month)
-            scrape_year = int(last_scrape.year)
-
-            # todo fix this:
-            # todo: ask what to do in case of partial data when ason date is not available?
+            # Extract scrape_year and scrape_month from the month_window
+            scrape_year = month_window[0]
+            scrape_month = month_window[1]
+            
             if last_ason:
                 as_on_year = int(last_ason.year)
                 as_on_month = int(last_ason.month)
