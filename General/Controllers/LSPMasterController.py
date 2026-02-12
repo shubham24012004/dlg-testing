@@ -142,7 +142,7 @@ def handle_update_lsp_master():
             return jsonify(
                 {"status": HTTPStatus.NOT_FOUND, "message": 'LSP Not Found',
                  "user_info": user_info}), HTTPStatus.NOT_FOUND
-        logger.info(f"{user_info} Updated LSP Master record with ID {lsp.id}")
+        logger.info(f"{user_info} Updated LSP Master record with ID {lsp['id']}")
         return jsonify(
             {"status": HTTPStatus.OK, "message": "LSP data updated successfully", "user_info": user_info, "data": lsp,
              "count": 1}), HTTPStatus.OK

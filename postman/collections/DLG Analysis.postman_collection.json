@@ -225,7 +225,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MzA2NjM5OCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTUxNTI0NSwiZXhwIjoxNzY5NjAxNjQ1LCJyb2xlIjoiYWRtaW4ifQ.qgH7JZ03cZtK8NmTM2OPOG_JVuqMLVZm8DEmEFjKXiw",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
                   "type": "string"
                 }
               ]
@@ -234,7 +234,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"id\": 1,\n    \"name\": \"test\",    \n    \"home_url\": \"http://test1.com\",\n    \"dlg_url\": \"http://test1.com/dlg_disclosure\"    \n}",
+              "raw": "{\n    \"id\": 66,\n\t\"name\": \"Fibe\",\n    \"home_url\": \"https://www.fibe.in/\",\n    \"brand_name\": \"Social Worth Technologies Pvt Ltd\",\n    \"lsp_type\": \"Lending techs with in-house NBFC\",\n    \"dlg_url\": \"\"\n\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -625,7 +625,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"start_date\": \"01-02-2026\",\r\n    \"end_date\": \"15-02-2026\"\r\n}",
+              "raw": "{\r\n    \"start_date\": \"15-12-2025\",\r\n    \"end_date\": \"15-02-2026\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -699,6 +699,47 @@
         },
         {
           "name": "Get All LSP Summary Latest",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyMDA4NjMzNCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTcwNjk1OCwiZXhwIjoxNzY5NzkzMzU4LCJyb2xlIjoiYWRtaW4ifQ.Cf4KbG89gf5Qz3jRn3-VHYNZK-rmYadelLyebRuSmvw",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"start_date\": \"15-12-2025\",\r\n    \"end_date\": \"31-01-2026\"\r\n}"
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/dashboard/all_lsp_latest_summary",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "dashboard",
+                "all_lsp_latest_summary"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Raw Data",
           "protocolProfileBehavior": {
             "disableBodyPruning": true
           },

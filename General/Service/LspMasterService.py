@@ -1,3 +1,4 @@
+import json
 from utils.logger_config import logger_method
 from typing import Optional, Any, List, Dict
 from DatabaseOperation.DatabaseModels.master_models import LspMaster, LspMasterIp, AuditAction
@@ -19,6 +20,8 @@ class LSPMasterService:
             master_obj = LspMaster()
             master_obj.home_url = lm.lsp_home_url
             master_obj.name = lm.lsp_name
+            master_obj.brand_name = lm.brand_name if lm.brand_name is not None else lm.lsp_name
+            master_obj.lsp_type = lm.lsp_type
             master_obj.dlg_url = None
             master_obj.active = True
             master_obj.parse_hint = 'auto'
@@ -50,7 +53,7 @@ class LSPMasterService:
                     payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__}
                 )
             )
-        return None
+            raise ex
 
     def update(self, lm: LspMaster) -> LspMaster | None:
         try:
@@ -70,6 +73,9 @@ class LSPMasterService:
             )
             return result
         except Exception as ex:
+            input_obj = lm.__dict__
+            del input_obj['_sa_instance_state']
+            print(input_obj)
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
@@ -77,10 +83,10 @@ class LSPMasterService:
                     action_taken=AuditAction.UPDATE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
-                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lm.__dict__}
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": input_obj}
                 )
             )
-        return None
+            raise ex
 
     def delete(self, lsp_id: int) -> int:
         try:
@@ -110,6 +116,7 @@ class LSPMasterService:
                     payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lsp_id}
                 )
             )
+            raise ex
 
     def find_dlg_url(self, lsp_id):
         dlg_url = None

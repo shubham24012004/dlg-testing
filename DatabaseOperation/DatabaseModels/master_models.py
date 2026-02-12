@@ -20,18 +20,20 @@ class AuditAction(Enum):
 
 
 class CrawlStatus(Enum):
-    COMPLETED = os.getenv("CRAWL_STATUS_COMPLETED", "Completed") # All data fetched successfully
-    PARTIAL = os.getenv("CRAWL_STATUS_PARTIAL", "Partial") # Some data missing Amount/Portfolio/As on date
-    ERROR = os.getenv("CRAWL_STATUS_ERROR", "Error") # Error during fetch/parse
-    MISSING = os.getenv("CRAWL_STATUS_MISSING", "Missing") # DLG URL MISSING
-    STALE = os.getenv("CRAWL_STATUS_STALE", "Stale") # as on date MISSING
-    NO_DATA = os.getenv("CRAWL_STATUS_NO_DATA", "NoData") # PAGE AVAILABLE DATA NOT AVAILABLE
+    COMPLETED = os.getenv("CRAWL_STATUS_COMPLETED", "Completed")  # All data fetched successfully
+    PARTIAL = os.getenv("CRAWL_STATUS_PARTIAL", "Partial")  # Some data missing Amount/Portfolio/As on date
+    ERROR = os.getenv("CRAWL_STATUS_ERROR", "Error")  # Error during fetch/parse
+    MISSING = os.getenv("CRAWL_STATUS_MISSING", "Missing")  # DLG URL MISSING
+    STALE = os.getenv("CRAWL_STATUS_STALE", "Stale")  # as on date MISSING
+    NO_DATA = os.getenv("CRAWL_STATUS_NO_DATA", "NoData")  # PAGE AVAILABLE DATA NOT AVAILABLE
 
 
 @dataclass
 class LspMasterIp:
     lsp_name: str
     lsp_home_url: str
+    brand_name: str
+    lsp_type: str
 
 
 @dataclass
@@ -48,6 +50,8 @@ class LspMaster(Base):
     __table_args__ = {'schema': 'dlg'}
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
+    brand_name = Column(String, nullable=False)
+    lsp_type = Column(String, nullable=True)
     home_url = Column(String, nullable=False)
     active = Column(Boolean, default=True)
     dlg_url = Column(String)
