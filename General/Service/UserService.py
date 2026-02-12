@@ -1,0 +1,250 @@
+"""Authentication service for user login and token management."""
+from typing import Optional, Tuple, Dict, Any
+from utils.logger_config import logger_method
+from General.Managers.UserManager import UserManager
+from General.Managers.AuthManager import AuthManager
+from General.Service.AuditLogService import AuditLogService
+from DatabaseOperation.DatabaseModels.master_models import UserInput, AuditAction, UserUpdate
+
+
+class UserService:
+    """Service for handling user authentication."""
+
+    def __init__(self, user_claims: Optional[Dict[str, Any]] = None):
+        self.logger = logger_method(__name__)
+        self.user_claims = user_claims
+        self.user_manager = UserManager(user_claims)
+        self.auth_manager = AuthManager(user_claims)
+        self.auditlog_service = AuditLogService(user_claims)
+
+    def add_user(self, user_details: UserInput) -> Tuple[bool, Optional[str]]:
+        try:
+            if self.auth_manager.find_user(username=user_details.username, role=user_details.role):
+                error_msg = f"User {user_details.username} already exists"
+                user_id = self.user_claims.get('username') if self.user_claims else "admin"
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        action_taken=AuditAction.INSERT_USER,
+                        auto_manual="manual",
+                        user_id=user_id,
+                        payload={"status": "Failed", "details": error_msg, "request_object": user_details.__dict__}
+                    )
+                )
+                return False, error_msg
+
+            if len(user_details.password) < 6:
+                error_msg = "Password must be at least 6 characters"
+                user_id = self.user_claims.get('username') if self.user_claims else "admin"
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        action_taken=AuditAction.INSERT_USER,
+                        auto_manual="manual",
+                        user_id=user_id,
+                        payload={"status": "Failed", "details": error_msg, "request_object": user_details.__dict__}
+                    )
+                )
+                return False, error_msg
+
+            # todo add more password strengthening checks here
+            result = self.user_manager.create(user_details)
+
+            user_id = self.user_claims.get('username') if self.user_claims else "admin"
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    action_taken=AuditAction.INSERT_USER,
+                    auto_manual="manual",
+                    user_id=user_id,
+                    payload={"status": "Success", "details": "User Created Successfully", "request_object": result}
+                )
+            )
+
+            self.logger.info(f"New user added: {user_details.username}")
+            return True, None
+        except Exception as ex:
+            user_id = self.user_claims.get('username') if self.user_claims else "admin"
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    action_taken=AuditAction.INSERT_USER,
+                    auto_manual="manual",
+                    user_id=user_id,
+                    payload={"status": "Exception", "details": str(ex), "request_object": user_details.__dict__}
+                )
+            )
+            raise ex
+
+    def update(self, user_id: int, user_details: UserUpdate) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+        """Update an existing user's details.
+
+        Args:
+            user_id: User id of the user to update
+            user_details: UserInput object with fields to update
+
+        Returns:
+            Tuple of (success, error_message, updated_user_data)
+        """
+        try:
+            if user_details.role:
+                existing_user = self.auth_manager.find_user(user_details.username, user_details.role)
+                if existing_user and existing_user.id != user_details.id:
+                    error_msg = f"user already exists for {user_details.username} and {user_details.role} Role cannot be updated"
+                    self.logger.warning(error_msg)
+                    user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+                    self.auditlog_service.record(
+                        self.auditlog_service.build(
+                            action_taken=AuditAction.UPDATE_USER,
+                            auto_manual="manual",
+                            user_id=user_id_audit,
+                            payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                        )
+                    )
+                    return False, error_msg, None
+
+            result = self.user_manager.update(user_id, user_details)
+            if result is None:
+                error_msg = f"User {user_id} not found"
+                self.logger.warning(error_msg)
+                user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        action_taken=AuditAction.UPDATE_USER,
+                        auto_manual="manual",
+                        user_id=user_id_audit,
+                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                    )
+                )
+                return False, error_msg, None
+
+            user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    action_taken=AuditAction.UPDATE_USER,
+                    auto_manual="manual",
+                    user_id=user_id_audit,
+                    payload={"status": "Success", "details": "User Updated Successfully", "request_object": result}
+                )
+            )
+
+            self.logger.info(f"User {user_id} updated successfully")
+            return True, None, result
+        except Exception as ex:
+            user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    action_taken=AuditAction.UPDATE_USER,
+                    auto_manual="manual",
+                    user_id=user_id_audit,
+                    payload={"status": "Exception", "details": str(ex),
+                             "request_object": {"user_id": user_id, "details": user_details.__dict__}}
+                )
+            )
+            self.logger.error(f"Error updating user {user_id}: {str(ex)}")
+            raise ex
+
+    def reset_password(self, user_details: UserUpdate) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+        """Reset user password.
+
+        Args:
+            user_details: UserInput object with new password
+
+        Returns:
+            Tuple of (success, error_message, updated_user_data)
+        """
+        try:
+            if user_details.password is None or len(user_details.password) < 6:
+                error_msg = "Password must be at least 6 characters"
+                user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        action_taken=AuditAction.RESET_PWD,
+                        auto_manual="manual",
+                        user_id=user_id_audit,
+                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                    )
+                )
+                return False, error_msg, None
+
+            user = self.auth_manager.find_user(username=user_details.username, role=user_details.role)
+            if not user:
+                error_msg = f"User {user_details.username} not found"
+                self.logger.warning(error_msg)
+                user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        action_taken=AuditAction.RESET_PWD,
+                        auto_manual="manual",
+                        user_id=user_id_audit,
+                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                    )
+                )
+                return False, error_msg, None
+
+            user_details.reset_password = False
+
+            result = self.user_manager.update(user.id, user_details)
+            if result is None:
+                error_msg = f"User {user_details.username} not found"
+                self.logger.warning(error_msg)
+                user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+                self.auditlog_service.record(
+                    self.auditlog_service.build(
+                        action_taken=AuditAction.RESET_PWD,
+                        auto_manual="manual",
+                        user_id=user_id_audit,
+                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                    )
+                )
+                return False, error_msg, None
+
+            user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    action_taken=AuditAction.RESET_PWD,
+                    auto_manual="manual",
+                    user_id=user_id_audit,
+                    payload={"status": "Success", "details": "Password Reset Successfully", "request_object": result}
+                )
+            )
+
+            self.logger.info(f"Password reset for user {user_id} successfully")
+            return True, None, result
+        except Exception as ex:
+            user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
+            self.auditlog_service.record(
+                self.auditlog_service.build(
+                    action_taken=AuditAction.RESET_PWD,
+                    auto_manual="manual",
+                    user_id=user_id_audit,
+                    payload={"status": "Exception", "details": str(ex), "request_object": {"user_id": user_id}}
+                )
+            )
+            self.logger.error(f"Error resetting password for user {user_id}: {str(ex)}")
+            raise ex
+
+    def list_users(
+            self, active_only: bool = False, page_size: int = 10, page: int = 1, username: str = None, role: str = None
+    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any]:
+        """List user records with filtering and pagination.
+
+        Args:
+            active_only: If True, only return active users
+            page: page number
+            page_size: page size
+            username: search string for username or firstname
+            role: role to filter by
+
+        Returns:
+            Tuple of (list of user dicts, count)
+        """
+        try:
+            results, count = self.user_manager.list_users(
+                active_only=active_only,
+                page_size=page_size,
+                page=page,
+                username=username,
+                role=role
+            )
+            self.logger.info(f"Retrieved {count} users")
+            return results, count
+        except Exception as ex:
+            self.logger.error(f"Error listing users: {str(ex)}")
+            raise ex

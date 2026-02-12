@@ -6,7 +6,6 @@ from typing import Dict, Any, Optional, Tuple
 from functools import wraps
 from flask import request, jsonify
 from http import HTTPStatus
-
 from utils.logger_config import logger_method
 
 logger = logger_method(__name__)
@@ -36,10 +35,10 @@ def create_jwt_token(user_id: int, username: str, additional_claims: Optional[Di
         "iat": datetime.utcnow(),
         "exp": datetime.utcnow() + timedelta(hours=JWTConfig.EXPIRATION_HOURS),
     }
-    
+
     if additional_claims:
         payload.update(additional_claims)
-    
+
     token = jwt.encode(payload, JWTConfig.SECRET_KEY, algorithm=JWTConfig.ALGORITHM)
     logger.info(f"JWT token created for user: {username}")
     return token
@@ -79,7 +78,7 @@ def extract_token_from_request(request_obj: Any) -> Optional[str]:
     auth_header = request_obj.headers.get("Authorization")
     if not auth_header:
         return None
-    
+
     try:
         # Expected format: "Bearer <token>"
         parts = auth_header.split()
@@ -101,26 +100,27 @@ def token_required(f):
             current_user = request.user_claims
             return jsonify({"user": current_user["username"]})
     """
+
     @wraps(f)
     def decorated(*args, **kwargs):
         token = extract_token_from_request(request)
-        
+
         if not token:
             return jsonify({
                 "status": HTTPStatus.UNAUTHORIZED,
                 "message": "Missing authorization token"
             }), HTTPStatus.UNAUTHORIZED
-        
+
         is_valid, claims, error = verify_jwt_token(token)
-        
+
         if not is_valid:
             return jsonify({
                 "status": HTTPStatus.UNAUTHORIZED,
                 "message": error or "Invalid token"
             }), HTTPStatus.UNAUTHORIZED
-        
+
         # Attach claims to request for use in route handler
         request.user_claims = claims
         return f(*args, **kwargs)
-    
+
     return decorated

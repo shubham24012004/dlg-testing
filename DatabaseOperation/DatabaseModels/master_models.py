@@ -3,6 +3,7 @@ SQLAlchemy ORM models for DLG analysis master tables.
 """
 from sqlalchemy import Column, String, Boolean, Float, Enum as SAEnum, Integer, ForeignKey, TIMESTAMP, JSON
 from sqlalchemy.orm import declarative_base
+from typing import Optional
 import os
 from enum import Enum
 from dataclasses import dataclass
@@ -14,6 +15,12 @@ class AuditAction(Enum):
     INSERT_LSP = os.getenv("AUDIT_ACTION_INSERT_LSP", "INSERT_LSP")
     UPDATE_LSP = os.getenv("AUDIT_ACTION_UPDATE_LSP", "UPDATE_LSP")
     DELETE_LSP = os.getenv("AUDIT_ACTION_DELETE_LSP", "DELETE_LSP")
+    INSERT_USER = os.getenv("AUDIT_ACTION_INSERT_USER", "INSERT_USER")
+    UPDATE_USER = os.getenv("AUDIT_ACTION_UPDATE_USER", "UPDATE_USER")
+    DELETE_USER = os.getenv("AUDIT_ACTION_DELETE_USER", "DELETE_USER")
+    RESET_PWD = os.getenv("AUDIT_ACTION_RESET_PWD", "RESET_PWD")
+    LOGIN = os.getenv("AUDIT_ACTION_LOGIN", "LOGIN")
+    LOGOUT = os.getenv("AUDIT_ACTION_LOGOUT", "LOGOUT")
     URL_FINDER = os.getenv("AUDIT_ACTION_URL_FINDER", "URL_FINDER")
     LSP_SUMMARY = os.getenv("AUDIT_ACTION_LSP_SUMMARY", "LSP_SUMMARY")
     CRAWL = os.getenv("AUDIT_ACTION_CRAWL", "CRAWL")
@@ -85,3 +92,42 @@ class AuditLog(Base):
     payload = Column(JSON)
     action_taken = Column(SAEnum(AuditAction), nullable=False)
     log_timestamp = Column(TIMESTAMP(timezone=True))
+
+
+class Users(Base):
+    __tablename__ = "dlg_users"
+    __table_args__ = {'schema': 'dlg'}
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, primary_key=True, nullable=False)
+    role = Column(String, primary_key=True, nullable=False)
+    firstname = Column(String, nullable=False)
+    lastname = Column(String)
+    password = Column(String)
+    active = Column(Boolean, default=True)
+    reset_password = Column(Boolean, default=True)
+    create_date = Column(TIMESTAMP(timezone=True))
+    modify_date = Column(TIMESTAMP(timezone=True))
+    last_login = Column(TIMESTAMP(timezone=True))
+
+
+@dataclass
+class UserInput:
+    username: str
+    password: str
+    role: str
+    firstname: str
+    lastname: Optional[str] = None
+    reset_password: Optional[bool] = None
+    active: Optional[bool] = None
+
+
+@dataclass
+class UserUpdate:
+    username: str
+    id: int
+    role: Optional[str] = None
+    password: Optional[str] = None
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
+    reset_password: Optional[bool] = None
+    active: Optional[bool] = None

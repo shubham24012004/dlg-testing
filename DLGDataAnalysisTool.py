@@ -20,6 +20,7 @@ from General.Controllers.AuditLogController import auditlog_bp
 from General.Controllers.AuthController import auth_bp
 from General.Controllers.ReportsController import reports_bp
 from General.Controllers.DashboardController import dashboard_bp
+from General.Controllers.UserController import user_bp
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -55,6 +56,7 @@ app.register_blueprint(auditlog_bp)
 app.register_blueprint(crawler_bp)
 app.register_blueprint(reports_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(user_bp)
 
 
 # ==================== Health & Utility Endpoints ====================

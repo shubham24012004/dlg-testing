@@ -119,7 +119,7 @@ def handle_new_lsp_master():
             {"status": HTTPStatus.BAD_REQUEST, "message": str(exc), "user_info": user_info}), HTTPStatus.BAD_REQUEST
 
 
-@lsp_master_bp.put("/api/lsp_master/")
+@lsp_master_bp.put("/api/lsp_master")
 @token_required
 def handle_update_lsp_master():
     """Handle LSP master update request."""
@@ -153,7 +153,7 @@ def handle_update_lsp_master():
              "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@lsp_master_bp.delete("/api/lsp_master/")
+@lsp_master_bp.delete("/api/lsp_master")
 @token_required
 def handle_delete_lsp_master():
     """Handle LSP master delete request."""
@@ -161,6 +161,12 @@ def handle_delete_lsp_master():
     username = user_claims['username']
     user_role = user_claims.get('role', 'unknown')
     user_info = f"[User: {username}, Role: {user_role}]"
+
+    if user_role != 'admin':
+        return jsonify(
+            {"status": HTTPStatus.UNAUTHORIZED, "message": 'Not Allowed to Delete LSP',
+             "user_info": user_info}), HTTPStatus.UNAUTHORIZED
+
     try:
         lsp_id = request.args.get('lsp_id', default=0, type=int)
         lsp_service = LSPMasterService(user_claims)
