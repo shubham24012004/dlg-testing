@@ -89,6 +89,10 @@ class AuditLogManager:
                 query = query.filter(AuditLog.log_timestamp >= start_date)
             if end_date:
                 query = query.filter(AuditLog.log_timestamp <= end_date)
+            
+            # capture total count before pagination
+            total_count = query.count() 
+
             if page:
                 query = query.offset((page - 1) * page_size)
             if page_size:
@@ -100,7 +104,7 @@ class AuditLogManager:
                                "payload": json.loads(row.payload),
                                "action_taken": row.action_taken.value, "log_timestamp": row.log_timestamp}
                 result.append(result_dict)
-            return result, len(result)
+            return result, total_count, len(result)
         except SQLAlchemyError as e:
             self.logger.exception(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
         finally:

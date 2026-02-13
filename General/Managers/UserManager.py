@@ -118,8 +118,8 @@ class UserManager:
             session.close()
 
     def list_users(
-            self, active_only: bool = False, page_size: int = None, page: int = None, username: str = None, role: str = None
-    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any]:
+            self, active_only: bool = False, page_size: int = 10, page: int = 1, username: str = None, role: str = None
+    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any, Any]:
         """List user records.
 
         Args:
@@ -146,11 +146,14 @@ class UserManager:
                 query = query.filter(
                     or_(Users.username.like(search_name), Users.firstname.like(search_name))
                 )
+            # capture total count before pagination
+            total_count = query.count()
             if page:
                 query = query.offset((page - 1) * page_size)
             if page_size:
                 query = query.limit(page_size)
             rows = query.all()
+            
             result = []
             for row in rows:
                 result_dict = {
@@ -166,7 +169,7 @@ class UserManager:
                     "last_login": row.last_login
                 }
                 result.append(result_dict)
-            return result, len(result)
+            return result, total_count, len(result)
         except Exception as ex:
             self.logger.error(f"{self._get_user_info()} Exception in list_users {ex}")
             raise

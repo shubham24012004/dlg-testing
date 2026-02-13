@@ -222,7 +222,7 @@ class UserService:
 
     def list_users(
             self, active_only: bool = False, page_size: int = 10, page: int = 1, username: str = None, role: str = None
-    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any]:
+    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any, Any]:
         """List user records with filtering and pagination.
 
         Args:
@@ -236,15 +236,15 @@ class UserService:
             Tuple of (list of user dicts, count)
         """
         try:
-            results, count = self.user_manager.list_users(
+            results, total_count, rows = self.user_manager.list_users(
                 active_only=active_only,
                 page_size=page_size,
                 page=page,
                 username=username,
                 role=role
             )
-            self.logger.info(f"Retrieved {count} users")
-            return results, count
+            self.logger.info(f"Retrieved {total_count} users")
+            return results, total_count, rows
         except Exception as ex:
             self.logger.error(f"Error listing users: {str(ex)}")
             raise ex

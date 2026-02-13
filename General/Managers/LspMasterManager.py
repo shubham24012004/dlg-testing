@@ -66,7 +66,7 @@ class LspMasterManager:
                 self.logger.info("Original Object")
                 self.logger.info(existing_lsp)
 
-                scraped = session.query(DlgRaw).filter_by(lsp_id=lm.id).one_or_none()
+                scraped = session.query(DlgRaw).filter_by(lsp_id=lm.id).count() > 0
                 if not scraped:
                     # can update all Data as LSP has NOT been scraped and there is NO raw data.
                     if lm.name is not None:
@@ -127,7 +127,7 @@ class LspMasterManager:
     def list_lsp_master(
             self, active_only: bool = False, per_page: int = None, page: int = None, lsp_id: int = None,
             lsp_name: str = None
-    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any]:
+    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any, Any]:
         """List LSP master records.
 
         Args:
@@ -154,6 +154,9 @@ class LspMasterManager:
                 query = query.filter(
                     or_(LspMaster.name.like(search_name), LspMaster.brand_name.like(search_name))
                 )
+            # capture total count before pagination
+            total_count = query.count()
+
             if page:
                 query = query.offset((page - 1) * per_page)
             if per_page:
@@ -166,7 +169,8 @@ class LspMasterManager:
                                "dlg_url": row.dlg_url, "parse_hint": row.parse_hint, "fetch_hint": row.fetch_hint,
                                "rules_json": row.rules_json, "last_crawl_date": row.last_crawl_date}
                 result.append(result_dict)
-            return result, len(result)
+            # return page results and total count (before pagination)
+            return result, total_count, len(result)
         except Exception as ex:
             self.logger.error(f"{self._get_user_info()} Exception in list_lsp_master {ex}")
             raise

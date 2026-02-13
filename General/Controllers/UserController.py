@@ -262,7 +262,7 @@ def list_users() -> Any:
         role = request.args.get('role', default="", type=str)
 
         user_service = UserService(user_claims)
-        results, count = user_service.list_users(
+        results, total_count, rows = user_service.list_users(
             active_only=active,
             page=page,
             page_size=pagesize,
@@ -270,15 +270,15 @@ def list_users() -> Any:
             role=role if role else None
         )
 
-        logger.info(f"{user_info} Fetched Users: {count}")
+        logger.info(f"{user_info} Fetched Users: {total_count}")
 
-        if count > 0:
+        if total_count > 0:
             return jsonify({
                 "status": HTTPStatus.OK,
                 "message": "Users fetched successfully",
                 "user_info": user_info,
                 "data": results,
-                "count": count
+                "count": total_count
             }), HTTPStatus.OK
         else:
             logger.info(f"{user_info} No users found")

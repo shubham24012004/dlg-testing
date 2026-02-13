@@ -43,12 +43,12 @@ def handle_list_audit_log():
             {"status": HTTPStatus.BAD_REQUEST, "message": message, "user_info": user_info}), HTTPStatus.BAD_REQUEST
     try:
         audit_service = AuditLogService(user_claims)
-        results, rows = audit_service.list_audit_logs(start_date=start_date, end_date=end_date, lsp_id=lsp_id,
+        results, total_count, rows = audit_service.list_audit_logs(start_date=start_date, end_date=end_date, lsp_id=lsp_id,
                                                       action_str=action, page=page, page_size=page_size)
         if rows > 0:
             logger.info(f"{user_info} Audit Logs Fetched successfully - Count: {rows}")
             return jsonify({"status": HTTPStatus.OK, "message": "Audit Logs Fetched", "user_info": user_info, "data": results,
-                            "count": rows}), HTTPStatus.OK
+                            "count": total_count}), HTTPStatus.OK
         else:
             logger.info(f"{user_info} No Audit logs found for the given filters")
             return jsonify(

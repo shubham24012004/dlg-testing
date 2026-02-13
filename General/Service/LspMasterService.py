@@ -158,7 +158,7 @@ class LSPMasterService:
         return lsp_name, dlg_url, reason
 
     def load_active(self, lsp_id: Optional[int] = None) -> List[LspMaster]:
-        result, count = self.list_lsp_master(active_only=True, lsp_id=lsp_id)
+        result, total_count, rows = self.list_lsp_master(active_only=True, lsp_id=lsp_id)
         lsp_master_list = []
         for row in result:
             lsp_master_obj = LspMaster(**row)
@@ -167,8 +167,8 @@ class LSPMasterService:
         return lsp_master_list
 
     def list_lsp_master(
-            self, active_only: bool = False, per_page: int = None, page: int = None, lsp_id: int = None,
+            self, active_only: bool = False, per_page: int = 10, page: int = 1, lsp_id: int = None,
             lsp_name: str = None
-    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any]:
+    ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any, Any]:
 
         return self.lsp_manager.list_lsp_master(active_only, per_page, page, lsp_id, lsp_name)

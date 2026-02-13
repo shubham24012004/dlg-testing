@@ -29,13 +29,13 @@ def handle_list_lsp_master():
         lsp_name = request.args.get('lsp_name', default="", type=str)
 
         lsp_service = LSPMasterService(user_claims)
-        results, rows = lsp_service.list_lsp_master(active_only=active, page=page, per_page=per_page, lsp_id=lsp_id,
+        results, total_count, rows = lsp_service.list_lsp_master(active_only=active, page=page, per_page=per_page, lsp_id=lsp_id,
                                                     lsp_name=lsp_name)
         logger.info(f"{user_info} Fetched LSP Master records: {rows}")
         if rows > 0:
             return jsonify({"status": HTTPStatus.OK, "message": "LSP fetched successfully", "user_info": user_info,
                             "data": results,
-                            "count": rows}), HTTPStatus.OK
+                            "count": total_count}), HTTPStatus.OK
         else:
             logger.info(f"{user_info} LSP Master record not found")
             return jsonify(
