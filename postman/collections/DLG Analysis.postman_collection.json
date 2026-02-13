@@ -166,7 +166,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MzA2NjM5OCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTUxNTI0NSwiZXhwIjoxNzY5NjAxNjQ1LCJyb2xlIjoiYWRtaW4ifQ.qgH7JZ03cZtK8NmTM2OPOG_JVuqMLVZm8DEmEFjKXiw",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
                   "type": "string"
                 }
               ]
@@ -175,7 +175,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n\t\"lsp_name\": \"manasi3\",\n    \"lsp_home_url\": \"https://manasi3.com\"\n}",
+              "raw": "{\n\t\"lsp_name\": \"Fibe\",\n    \"lsp_home_url\": \"https://www.fibe.in/\",\n    \"brand_name\": \"Social Worth Technologies Pvt Ltd\",\n    \"lsp_type\": \"Lending techs with in-house NBFC\"\n\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -543,7 +543,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"username\": \"admin\",\r\n    \"password\": \"admin123\"\r\n}",
+              "raw": "{\r\n    \"username\": \"admin@email.com\",\r\n    \"password\": \"admin123\",\r\n    \"role\": \"admin\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -774,6 +774,134 @@
                 "api",
                 "dashboard",
                 "all_lsp_latest_summary"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Add User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"username\": \"user1@email.com\",\r\n    \"password\": \"user123\",\r\n    \"role\": \"admin\",\r\n    \"firstname\": \"User 1\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/user",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "user"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{   \"id\": 2,\r\n    \"password\": \"user321\",    \r\n    \"firstname\": \"User\",\r\n    \"role\": \"admin\",\r\n    \"username\": \"user1@email.com\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/user",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "user"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GetUsers",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/users?role=admin",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "admin"
+                }
               ]
             }
           },
