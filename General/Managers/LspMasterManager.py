@@ -145,8 +145,7 @@ class LspMasterManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(LspMaster).order_by(asc(LspMaster.name))
-            if active_only:
-                query = query.filter_by(active=True)
+            query = query.filter_by(active=active_only)
             if lsp_id:
                 query = query.filter_by(id=lsp_id)
             if lsp_name:

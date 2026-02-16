@@ -137,8 +137,7 @@ class UserManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(Users).order_by(asc(Users.id))
-            if active_only:
-                query = query.filter_by(active=True)
+            query = query.filter_by(active=active_only)
             if role:
                 query = query.filter_by(role=role)
             if username:

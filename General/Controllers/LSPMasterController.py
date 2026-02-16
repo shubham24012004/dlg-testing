@@ -22,15 +22,22 @@ def handle_list_lsp_master():
     user_role = user_claims.get('role', 'unknown')
     user_info = f"[User: {username}, Role: {user_role}]"
     try:
-        active = request.args.get('active', default=True, type=bool)
+        active = request.args.get('active', default="True", type=str)
+        active_flag = True
+        if active.lower() == "false":
+            active_flag = False
+
         page = request.args.get('page', default=1, type=int)
         per_page = request.args.get('per_page', default=10, type=int)
         lsp_id = request.args.get('lsp_id', default=0, type=int)
         lsp_name = request.args.get('lsp_name', default="", type=str)
 
         lsp_service = LSPMasterService(user_claims)
-        results, total_count, rows = lsp_service.list_lsp_master(active_only=active, page=page, per_page=per_page, lsp_id=lsp_id,
-                                                    lsp_name=lsp_name)
+        results, total_count, rows = lsp_service.list_lsp_master(active_only=active_flag,
+                                                                 page=page,
+                                                                 per_page=per_page,
+                                                                 lsp_id=lsp_id,
+                                                                 lsp_name=lsp_name)
         logger.info(f"{user_info} Fetched LSP Master records: {rows}")
         if rows > 0:
             return jsonify({"status": HTTPStatus.OK, "message": "LSP fetched successfully", "user_info": user_info,

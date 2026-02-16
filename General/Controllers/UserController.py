@@ -255,7 +255,10 @@ def list_users() -> Any:
              "user_info": user_info}), HTTPStatus.UNAUTHORIZED
 
     try:
-        active = request.args.get('active', default=True, type=bool)
+        active = request.args.get('active', default="True", type=str)
+        active_flag = True
+        if active.lower() == "false":
+            active_flag = False
         page = request.args.get('page', default=1, type=int)
         pagesize = request.args.get('pagesize', default=10, type=int)
         name = request.args.get('name', default="", type=str)
@@ -263,7 +266,7 @@ def list_users() -> Any:
 
         user_service = UserService(user_claims)
         results, total_count, rows = user_service.list_users(
-            active_only=active,
+            active_only=active_flag,
             page=page,
             page_size=pagesize,
             username=name if name else None,
