@@ -2,6 +2,7 @@ import re
 import io
 import json
 import datetime as dt
+import calendar
 from bs4 import BeautifulSoup
 from dateutil import parser as dateparser
 from typing import Any, Dict, List, Optional, Tuple
@@ -140,8 +141,32 @@ def parse_date_any(s: Any) -> Optional[dt.datetime]:
     # Remove ordinal suffixes (1st, 2nd, 3rd, 4th, etc.) to help dateparser
     txt_cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', txt)
     
+    # Detect Month-YYYY format (e.g., "Jan-2026") before preprocessing
+    month_yyyy_match = re.search(r"([A-Za-z]{3,9})-(\d{4})\b", txt_cleaned)
+    
+    # Handle Month-YYYY format (e.g., "Jan-2026" -> "Jan 2026")
+    txt_cleaned = re.sub(r"([A-Za-z]{3,9})-(\d{4})\b", r"\1 \2", txt_cleaned)
+    
+    # Detect Month'YY format before preprocessing
+    # Includes regular apostrophe ('), left quote (\u2018), and right quote (\u2019)
+    month_yy_match = re.search(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", txt_cleaned)
+    
+    # Handle Month'YY format (e.g., "Dec'25" -> "Dec 2025")
+    txt_cleaned = re.sub(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", r"\1 20\2", txt_cleaned)
+    
+    # Handle DD-Month-YY format (e.g., "31-January-26" -> "31-January-2026")
+    txt_cleaned = re.sub(r"(\d{1,2})-([A-Za-z]{3,9})-(\d{2})\b", r"\1-\2-20\3", txt_cleaned)
+    
     try:
-        return dateparser.parse(txt_cleaned, dayfirst=True, fuzzy=True)
+        parsed = dateparser.parse(txt_cleaned, dayfirst=True, fuzzy=True)
+        
+        # If we parsed a Month'YY or Month-YYYY format, set to last day of that month
+        # (Financial disclosures with "as on Dec'25" or "as on Jan-2026" mean end of month)
+        if parsed and (month_yy_match or month_yyyy_match):
+            last_day = calendar.monthrange(parsed.year, parsed.month)[1]
+            parsed = parsed.replace(day=last_day)
+        
+        return parsed
     except Exception:
         return None
 
@@ -297,6 +322,12 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
 
         # As on 30.11.2025
         r"As\s+on\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4})",
+        
+        # as on Dec'25 or as on Dec 25 (Month'YY format with "as on" prefix)
+        r"as\s+on\s+([A-Za-z]{3,9}['\u2018\u2019]?\s*\d{2})",
+        
+        # Dec'25 or (Dec'25) - Month'YY format without prefix (matches Unicode quotes)
+        r"([A-Za-z]{3,9}['\u2018\u2019]\d{2})\b",
     ]
 
     rows: List[Dict[str, Any]] = []
@@ -307,6 +338,7 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
         for page in pdf.pages:
             ason_text = ""
             text = page.extract_text() or ""
+            
             for pattern in date_patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
@@ -314,6 +346,7 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                     # Save the first found date to use across all pages
                     if not ason_text_global:
                         ason_text_global = ason_text
+                    break
             
             # Use the globally found date if current page doesn't have one
             if not ason_text and ason_text_global:
@@ -360,9 +393,38 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                     vals = [str(x).strip() if x else "" for x in r]
                     if not any(v.strip() for v in vals):
                         continue
-                    row = {header[i] if i < len(header) else f"col_{i}": vals[i] for i in range(len(vals))}
-                    row['ason'] = parse_date_any(ason_text)
-                    rows.append(row)
+                    
+                    # Check if any cell contains newlines with multiple data entries
+                    # If so, split into multiple rows (e.g., Bhanix PDF with merged data)
+                    split_rows = []
+                    has_multiline = False
+                    multiline_col_idx = -1
+                    
+                    for idx, val in enumerate(vals):
+                        if '\n' in val and len([line for line in val.split('\n') if line.strip()]) > 1:
+                            # Found a cell with multiple non-empty lines
+                            has_multiline = True
+                            multiline_col_idx = idx
+                            break
+                    
+                    if has_multiline and multiline_col_idx >= 0:
+                        # Split the multiline cell into separate rows
+                        lines = [line.strip() for line in vals[multiline_col_idx].split('\n') if line.strip()]
+                        # Filter out "Total" lines as they are summary rows
+                        lines = [line for line in lines if not re.match(r'^Total\s*\d*\.?\d*$', line, re.IGNORECASE)]
+                        
+                        for line in lines:
+                            # Create a new row for each line
+                            new_vals = vals.copy()
+                            new_vals[multiline_col_idx] = line
+                            row = {header[i] if i < len(header) else f"col_{i}": new_vals[i] for i in range(len(new_vals))}
+                            row['ason'] = parse_date_any(ason_text)
+                            rows.append(row)
+                    else:
+                        # Normal single-line row
+                        row = {header[i] if i < len(header) else f"col_{i}": vals[i] for i in range(len(vals))}
+                        row['ason'] = parse_date_any(ason_text)
+                        rows.append(row)
     return rows
 
 
@@ -417,9 +479,17 @@ def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dic
 
 
 # noinspection PyArgumentList
-def extract_from_html_tables(fetch: FetchResult) -> List[Dict[str, Any]]:
+def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = None) -> List[Dict[str, Any]]:
     soup = BeautifulSoup(fetch.body, "html.parser")
     tables = soup.find_all("table")
+    
+    # If table_index is specified, extract only from that table
+    if table_index is not None:
+        try:
+            tables = [tables[table_index]]
+        except IndexError:
+            return []
+    
     rows: List[Dict[str, Any]] = []
     for t in tables:
         # Check for thead with th elements (not wrapped in tr)
@@ -606,6 +676,10 @@ def extract_dlg_from_plain_text(
     # Check for FinAGG-specific format first
     if "FinAGG" in lsp_name or "Portfolio OS as on" in text:
         return parse_finagg_dlg_plain_text(text, lsp_name, scrape_ts)
+    
+    # Check for Finnable-specific format (alternating portfolio number and amount lines)
+    if "Finnable" in lsp_name or ("Portfolio Number" in text and "Disbursement" in text):
+        return parse_finnable_dlg_plain_text(text, lsp_name, scrape_ts)
 
     # Check if rules specify regex-based extraction
     if rules_json:
@@ -881,6 +955,87 @@ def parse_cred_style_dlg_plain_text(
     return deduped
 
 
+def parse_finnable_dlg_plain_text(
+        text: str,
+        lsp_name: str,
+        scrape_ts: dt.datetime
+) -> List[Dict[str, Any]]:
+    """
+    Parse Finnable Credit Ltd's DLG disclosure format.
+    
+    The page has Portfolio Number and Disbursement columns where data alternates line-by-line:
+    Portfolio Number
+    1
+    6,19,25,366
+    2
+    1,84,23,874
+    ...
+    Total
+    ...
+    Last updated as of November 2025
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    
+    # Find the date
+    as_on_date = None
+    date_match = re.search(r"Last updated as of ([A-Za-z]+ \d{4})", text, re.IGNORECASE)
+    if date_match:
+        date_str = date_match.group(1).strip()
+        parsed = parse_date_any(date_str)
+        if parsed:
+            # Month YYYY format - use last day of month
+            as_on_date = parsed.replace(day=1) + dt.timedelta(days=32)
+            as_on_date = as_on_date.replace(day=1) - dt.timedelta(days=1)
+    
+    rows = []
+    portfolio_started = False
+    i = 0
+    
+    while i < len(lines):
+        line = lines[i]
+        
+        if "Portfolio Number" in line:
+            portfolio_started = True
+            i += 1
+            continue
+        
+        if not portfolio_started:
+            i += 1
+            continue
+        
+        # Stop at Total or Last updated
+        if line.lower().startswith("total") or "last updated" in line.lower():
+            break
+        
+        # Check if line is a portfolio number (single digit)
+        if re.match(r'^\d+$', line):
+            portfolio_num = line
+            # Next line should be the amount
+            if i + 1 < len(lines):
+                next_line = lines[i + 1]
+                if re.match(r'^[\d,]+$', next_line):
+                    # Remove commas and convert to float
+                    amount_str = next_line.replace(',', '')
+                    try:
+                        amount = float(amount_str)
+                        rows.append({
+                            "LSP Name": lsp_name,
+                            "Lender": None,
+                            "Portfolio": f"Portfolio {portfolio_num}",
+                            "Amount": amount,
+                            "AsOnTimestamp": as_on_date,
+                            "ScrapeTimestamp": scrape_ts
+                        })
+                    except ValueError:
+                        pass
+                    i += 2  # Skip both lines
+                    continue
+        
+        i += 1
+    
+    return rows
+
+
 def parse_finagg_dlg_plain_text(
         text: str,
         lsp_name: str,
@@ -1049,6 +1204,7 @@ def extract_by_regex(text: str, pattern: str, group: int = 1) -> Optional[str]:
 def page_level_values(fetch: FetchResult, rules: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     page_rules = rules.get("page_level") or {}
+    table_index = rules.get("table_index")
 
     body_text = ""
     if not looks_like_pdf(fetch):
@@ -1080,9 +1236,22 @@ def page_level_values(fetch: FetchResult, rules: Dict[str, Any]) -> Dict[str, An
     as_on_regex = page_rules.get("as_on_regex")
     if as_on_regex and body_text:
         grp = int(page_rules.get("as_on_group", 1))
-        v = extract_by_regex(body_text, as_on_regex, group=grp)
-        if v:
-            out["as_on"] = v
+        # If table_index is specified, find all matches and select the one at that index
+        if table_index is not None:
+            try:
+                matches = re.findall(as_on_regex, body_text, flags=re.IGNORECASE | re.DOTALL)
+                if matches:
+                    # Handle both single groups and tuple groups from regex
+                    if isinstance(matches[table_index], tuple):
+                        out["as_on"] = matches[table_index][grp - 1].strip()
+                    else:
+                        out["as_on"] = matches[table_index].strip()
+            except (IndexError, Exception):
+                pass
+        else:
+            v = extract_by_regex(body_text, as_on_regex, group=grp)
+            if v:
+                out["as_on"] = v
 
     return out
 

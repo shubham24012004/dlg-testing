@@ -131,7 +131,8 @@ class DlgCrawlerService:
             source: LspMaster,
             scrape_ts: dt.datetime,
     ) -> None:
-        if status in {CrawlStatus.COMPLETED, CrawlStatus.PARTIAL}:
+        # Save actual data for COMPLETED, PARTIAL, and STALE (data exists but date missing)
+        if status in {CrawlStatus.COMPLETED, CrawlStatus.PARTIAL, CrawlStatus.STALE} and normalized_rows:
             dlg_rows = [self.dlg_raw_from_dict(row, status.value) for row in normalized_rows]
             for dlg_row in dlg_rows:
                 dlg_row.lsp_id = source.id
@@ -139,7 +140,8 @@ class DlgCrawlerService:
             self.crawler_manager.append(dlg_rows)
             return
 
-        # if status in {CrawlStatus.MISSING, CrawlStatus.ERROR, CrawlStatus.NO_DATA, CrawlStatus.STALE}:
+        # For ERROR, MISSING, NO_DATA, or when no rows extracted, create dummy row
+        # if status in {CrawlStatus.MISSING, CrawlStatus.ERROR, CrawlStatus.NO_DATA}:
         else:
             row = DlgRaw(
                 lsp_id=source.id,
@@ -205,16 +207,16 @@ class DlgCrawlerService:
         if parse_hint == "pdf_table" or looks_like_pdf(fetch):
             return extract_from_pdf(fetch)
         if parse_hint == "html_table":
-            return extract_from_html_tables(fetch)
+            return extract_from_html_tables(fetch, table_index=rules.get("table_index"))
 
         # auto
         if looks_like_pdf(fetch):
             return extract_from_pdf(fetch)
 
-        rows = extract_from_html_tables(fetch)
+        rows = extract_from_html_tables(fetch, table_index=rules.get("table_index"))
         if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
             fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"))
-            rows = extract_from_html_tables(fetch_pw)
+            rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"))
         return rows
 
     # ------------------------------------------------------------------
