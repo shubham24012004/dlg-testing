@@ -162,8 +162,7 @@ class LSPMasterService:
         lsp_master_list = []
         for row in result:
             lsp_master_obj = LspMaster(**row)
-            if lsp_master_obj.dlg_url:
-                lsp_master_list.append(lsp_master_obj)
+            lsp_master_list.append(lsp_master_obj)
         return lsp_master_list
 
     def list_lsp_master(
