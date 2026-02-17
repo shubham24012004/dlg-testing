@@ -158,7 +158,7 @@ class UserService:
                         action_taken=AuditAction.RESET_PWD,
                         auto_manual="manual",
                         user_id=user_id_audit,
-                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id_audit}}
                     )
                 )
                 return False, error_msg, None
@@ -173,7 +173,7 @@ class UserService:
                         action_taken=AuditAction.RESET_PWD,
                         auto_manual="manual",
                         user_id=user_id_audit,
-                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id_audit}}
                     )
                 )
                 return False, error_msg, None
@@ -190,7 +190,7 @@ class UserService:
                         action_taken=AuditAction.RESET_PWD,
                         auto_manual="manual",
                         user_id=user_id_audit,
-                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id}}
+                        payload={"status": "Failed", "details": error_msg, "request_object": {"user_id": user_id_audit}}
                     )
                 )
                 return False, error_msg, None
@@ -205,7 +205,7 @@ class UserService:
                 )
             )
 
-            self.logger.info(f"Password reset for user {user_id} successfully")
+            self.logger.info(f"Password reset for user {user_id_audit} successfully")
             return True, None, result
         except Exception as ex:
             user_id_audit = self.user_claims.get('username') if self.user_claims else "system"
@@ -214,10 +214,10 @@ class UserService:
                     action_taken=AuditAction.RESET_PWD,
                     auto_manual="manual",
                     user_id=user_id_audit,
-                    payload={"status": "Exception", "details": str(ex), "request_object": {"user_id": user_id}}
+                    payload={"status": "Exception", "details": str(ex), "request_object": {"user_id": user_id_audit}}
                 )
             )
-            self.logger.error(f"Error resetting password for user {user_id}: {str(ex)}")
+            self.logger.error(f"Error resetting password for user {user_id_audit}: {str(ex)}")
             raise ex
 
     def list_users(

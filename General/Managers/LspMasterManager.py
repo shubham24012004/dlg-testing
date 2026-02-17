@@ -126,7 +126,7 @@ class LspMasterManager:
 
     def list_lsp_master(
             self, active_only: bool = False, per_page: int = None, page: int = None, lsp_id: int = None,
-            lsp_name: str = None
+            lsp_name: str = None, lsp_type: str = None
     ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any, Any]:
         """List LSP master records.
 
@@ -145,7 +145,8 @@ class LspMasterManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(LspMaster).order_by(asc(LspMaster.name))
-            query = query.filter_by(active=active_only)
+            if active_only:
+                query = query.filter(LspMaster.active.is_(True))
             if lsp_id:
                 query = query.filter_by(id=lsp_id)
             if lsp_name:
@@ -153,10 +154,15 @@ class LspMasterManager:
                 query = query.filter(
                     or_(LspMaster.name.like(search_name), LspMaster.brand_name.like(search_name))
                 )
+            if lsp_type:
+                search_type = f"%{lsp_type}%"
+                query = query.filter(
+                    LspMaster.lsp_type.ilike(search_type)
+                )
             # capture total count before pagination
             total_count = query.count()
 
-            if page:
+            if page and per_page:
                 query = query.offset((page - 1) * per_page)
             if per_page:
                 query = query.limit(per_page)

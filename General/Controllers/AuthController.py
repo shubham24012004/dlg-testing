@@ -44,26 +44,28 @@ def login() -> Any:
                 "message": "Request body is required"
             }), HTTPStatus.BAD_REQUEST
 
-        user_input = UserInput(**data)
-        # Validate input
-        if not user_input.username or not user_input.password or not user_input.role:
+        username = (data.get("username") or "").strip()
+        password = data.get("password") or ""
+        
+        user_info = f"[User: {username or 'unknown'}, Role: unknown]"
+
+        if not username or not password:
             logger.info(f"{user_info} Login attempt with missing required fields")
             return jsonify({
-                "status": HTTPStatus.BAD_REQUEST,
-                "message": "Username, password, role are required",
+                "status": int(HTTPStatus.BAD_REQUEST),
+                "message": "Username and password are required",
                 "user_info": user_info
             }), HTTPStatus.BAD_REQUEST
-
+        
         # Authenticate user
         auth_service = AuthService()
-        is_authenticated, user_data, error = auth_service.authenticate_user(username=user_input.username,
-                                                                            password=user_input.password,
-                                                                            role=user_input.role)
+        is_authenticated, user_data, error = auth_service.authenticate_user(username=username,
+                                                                            password=password)
 
         if not is_authenticated:
-            logger.info(f"Login failed for user {username}: {error}")
+            logger.info(f"{user_info} Login failed: {error}")
             return jsonify({
-                "status": HTTPStatus.UNAUTHORIZED,
+                "status": int(HTTPStatus.UNAUTHORIZED),
                 "message": error or "Authentication failed"
             }), HTTPStatus.UNAUTHORIZED
 
@@ -73,10 +75,10 @@ def login() -> Any:
             username=user_data["username"],
             additional_claims={"role": user_data.get("role")}
         )
-
-        logger.info(f"User {user_input.username} logged in successfully")
+        user_info = f"[User: {user_data['username']}, Role: {user_data.get('role', 'unknown')}]"
+        logger.info(f"{user_info} User logged in successfully")
         return jsonify({
-            "status": HTTPStatus.OK,
+            "status": int(HTTPStatus.OK),
             "message": "Login successful",
             "data": {
                 "token": token,

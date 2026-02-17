@@ -34,7 +34,7 @@ class LSPMasterService:
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=None,
+                    lsp_id=result.id,
                     action_taken=AuditAction.INSERT_LSP,
                     auto_manual="auto",
                     user_id=user_id,
@@ -60,11 +60,11 @@ class LSPMasterService:
             result = self.lsp_manager.update(lm)
             if not result:
                 raise Exception("LSP not found")
-
+            
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=None,
+                    lsp_id=lm.id,
                     action_taken=AuditAction.UPDATE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
@@ -79,7 +79,7 @@ class LSPMasterService:
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=None,
+                    lsp_id=lm.id,
                     action_taken=AuditAction.UPDATE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
@@ -97,7 +97,7 @@ class LSPMasterService:
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=None,
+                    lsp_id=str(lsp_id),
                     action_taken=AuditAction.DELETE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
@@ -109,11 +109,11 @@ class LSPMasterService:
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=None,
+                    lsp_id=str(lsp_id),
                     action_taken=AuditAction.DELETE_LSP,
                     auto_manual="auto",
                     user_id=user_id,
-                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": lsp_id}
+                    payload={"status": "Exception", "details": f"{str(ex)}", "request_object": str(lsp_id)}
                 )
             )
             raise ex
@@ -167,7 +167,7 @@ class LSPMasterService:
 
     def list_lsp_master(
             self, active_only: bool = False, per_page: int = 10, page: int = 1, lsp_id: int = None,
-            lsp_name: str = None
+            lsp_name: str = None,lsp_type: str = None
     ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any, Any]:
 
-        return self.lsp_manager.list_lsp_master(active_only, per_page, page, lsp_id, lsp_name)
+        return self.lsp_manager.list_lsp_master(active_only, per_page, page, lsp_id, lsp_name, lsp_type)

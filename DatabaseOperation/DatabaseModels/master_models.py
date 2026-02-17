@@ -64,7 +64,7 @@ class LspMaster(Base):
     dlg_url = Column(String)
     parse_hint = Column(String, default="auto")
     fetch_hint = Column(String, default="auto")
-    rules_json = Column(JSON, default='{}')
+    rules_json = Column(JSON, default=dict)
     last_crawl_date = Column(TIMESTAMP(timezone=True))
 
 
@@ -115,7 +115,7 @@ class UserInput:
     username: str
     password: str
     role: str
-    firstname: str
+    firstname: Optional[str] = None
     lastname: Optional[str] = None
     reset_password: Optional[bool] = None
     active: Optional[bool] = None

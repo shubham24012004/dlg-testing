@@ -31,23 +31,16 @@ class AuditLogManager:
     def record(self, entry: AuditLog) -> bool:
         session = self.conn_factory.get_session()
         try:
-            db_entry = AuditLog(
-                lsp_id=entry.lsp_id,
-                auto_manual=entry.auto_manual,
-                user_id=entry.user_id,
-                payload=entry.payload or "",
-                action_taken=entry.action_taken,
-                log_timestamp=entry.log_timestamp)
-            session.add(db_entry)
+            session.add(entry)
             session.commit()
             self.logger.info(f"{self._get_user_info()} Audit log recorded for LSP ID: {entry.lsp_id}")
             return True
         except SQLAlchemyError as e:
             session.rollback()
             self.logger.exception(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
+            return False
         finally:
             session.close()
-        return False
 
     def build(self,
               lsp_id: str,
@@ -73,7 +66,7 @@ class AuditLogManager:
             action_taken=action_taken,
             auto_manual=auto_manual,
             user_id=user_id,
-            payload=json.dumps(payload),
+            payload=payload,
             log_timestamp=dt.datetime.utcnow(),
         )
 
@@ -81,32 +74,72 @@ class AuditLogManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(AuditLog).order_by(desc(AuditLog.log_timestamp))
-            if lsp_id:
-                query = query.filter_by(lsp_id=lsp_id)
-            if action_str:
-                query = query.filter_by(action_taken=action_str.value)
-            if start_date:
-                query = query.filter(AuditLog.log_timestamp >= start_date)
-            if end_date:
-                query = query.filter(AuditLog.log_timestamp <= end_date)
-            
-            # capture total count before pagination
-            total_count = query.count() 
 
-            if page:
-                query = query.offset((page - 1) * page_size)
-            if page_size:
-                query = query.limit(page_size)
+            if lsp_id:
+                query = query.filter(AuditLog.lsp_id == lsp_id)
+
+            # --- action filter: supports AuditAction or string like "LOGIN" ---
+            if action_str:
+                action_enum = None
+                if isinstance(action_str, AuditAction):
+                    action_enum = action_str
+                elif isinstance(action_str, str):
+                    s = action_str.strip()
+                    # Prefer match by Enum NAME, e.g., "LOGIN"
+                    try:
+                        action_enum = AuditAction[s]
+                    except Exception:
+                        # Fallback: match by Enum VALUE if caller passes the value
+                        try:
+                            action_enum = AuditAction(s)
+                        except Exception:
+                            action_enum = None
+
+                if action_enum:
+                    query = query.filter(AuditLog.action_taken == action_enum)
+
+            # --- date filters: convert date -> datetime bounds (recommended) ---
+            if start_date:
+                if isinstance(start_date, dt.date) and not isinstance(start_date, dt.datetime):
+                    start_date = dt.datetime.combine(start_date, dt.time.min)
+                query = query.filter(AuditLog.log_timestamp >= start_date)
+
+            if end_date:
+                if isinstance(end_date, dt.date) and not isinstance(end_date, dt.datetime):
+                    end_date = dt.datetime.combine(end_date, dt.time.max)
+                query = query.filter(AuditLog.log_timestamp <= end_date)
+
+            total_count = query.count()
+
+            if page and page_size:
+                query = query.offset((page - 1) * page_size).limit(page_size)
+
             rows = query.all()
             result = []
+
             for row in rows:
-                result_dict = {"lsp_id": row.lsp_id, "auto_manual": row.auto_manual, "user_id": row.user_id,
-                               "payload": json.loads(row.payload),
-                               "action_taken": row.action_taken.value, "log_timestamp": row.log_timestamp}
-                result.append(result_dict)
+                payload_val = row.payload
+                # If payload is stored as JSON dict, keep it. If string, try parse.
+                if isinstance(payload_val, str):
+                    try:
+                        payload_val = json.loads(payload_val)
+                    except Exception:
+                        payload_val = {"raw": payload_val}
+
+                result.append({
+                    "lsp_id": row.lsp_id,
+                    "auto_manual": row.auto_manual,
+                    "user_id": row.user_id,
+                    "payload": payload_val,
+                    "action_taken": row.action_taken.value if hasattr(row.action_taken, "value") else str(row.action_taken),
+                    "log_timestamp": row.log_timestamp,
+                })
+
             return result, total_count, len(result)
+
         except SQLAlchemyError as e:
             self.logger.exception(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
         finally:
             session.close()
+
         return None
