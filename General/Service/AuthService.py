@@ -15,7 +15,7 @@ class AuthService:
         self.auth_manager = AuthManager(user_claims)
         self.auditlog_service = AuditLogService(user_claims)
 
-    def authenticate_user(self, username: str, password: str, role: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+    def authenticate_user(self, username: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
         """Authenticate user with username and password.
         
         Args:
@@ -27,8 +27,8 @@ class AuthService:
             Tuple of (is_authenticated, user_data_dict, error_message)
         """
         try:
-            if not username or not password or not role:
-                error_msg = "Username, password and role are required"
+            if not username or not password:
+                error_msg = "Username and password are required"
                 self.logger.warning(error_msg)
                 user_id = username
                 self.auditlog_service.record(
@@ -41,7 +41,7 @@ class AuthService:
                 )
                 return False, None, error_msg
 
-            user = self.auth_manager.find_user(username=username, role=role)
+            user = self.auth_manager.find_user_by_username(username=username)
             if not user:
                 error_msg = f"User not found: {username}"
                 self.logger.warning(error_msg)
@@ -55,7 +55,11 @@ class AuthService:
                     )
                 )
                 return False, None, error_msg
-
+            
+            if not user.password or user.password != password:
+                error_msg = "Invalid password"
+                # (audit log failed login if you want)
+                return False, None, error_msg
             # todo check password
             # decrypt pwd from db and check with the pwd and then return success or invalid pwd message
             # User authenticated successfully
