@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from utils.constants import AuditAction, CrawlStatus, LSPType
 from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 from flask import request, jsonify, Blueprint
@@ -128,3 +129,12 @@ def lsp_raw():
             {"status": HTTPStatus.INTERNAL_SERVER_ERROR,
              "message": f"Error during LSP raw data retrieval for LSP ID: {lsp_id}: {str(exc)}",
              "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@dashboard_bp.get("/api/dashboard/enums")
+def get_enums():
+    """Return all enum values for frontend use."""
+    return jsonify({
+        "lsp_types": [e.value for e in LSPType],
+        "crawl_statuses": [e.value for e in CrawlStatus],
+        "audit_actions": [e.value for e in AuditAction]
+    }), HTTPStatus.OK

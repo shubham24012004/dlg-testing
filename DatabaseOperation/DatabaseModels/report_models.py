@@ -1,7 +1,7 @@
 """
 SQLAlchemy ORM models for DLG analysis reports tables.
 """
-from sqlalchemy import Column, String, Boolean, Float, Enum as SAEnum, Integer, ForeignKey, TIMESTAMP, JSON
+from sqlalchemy import Column, String, Boolean, Float, Integer, ForeignKey, TIMESTAMP, JSON
 from sqlalchemy.orm import declarative_base
 import os
 from enum import Enum

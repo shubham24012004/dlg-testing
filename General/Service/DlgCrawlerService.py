@@ -4,7 +4,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from utils.simple_ocr_extractor import extract_simple
 from General.Service.AuditLogService import AuditLogService
 from General.Managers.DlgCrawlerManager import DlgCrawlerManager
-from DatabaseOperation.DatabaseModels.master_models import FetchResult, LspMaster, DlgRaw, AuditAction, CrawlStatus
+from DatabaseOperation.DatabaseModels.master_models import FetchResult, LspMaster, DlgRaw
+from utils.constants import AuditAction, CrawlStatus
 
 from utils.utils import (
     extract_dlg_from_plain_text,
@@ -39,7 +40,7 @@ class DlgCrawlerService:
 
     def run_scrape_sources(self, sources: List[LspMaster]) -> None:
         for source in sources:
-            scrape_started_at = dt.datetime.utcnow()
+            scrape_started_at = dt.datetime.now(tz=dt.timezone.utc)
             try:
                 status, *_rest, normalized_rows = self.scrape_one(source)
                 self.persist_rows(status, normalized_rows, source, scrape_started_at)
@@ -69,7 +70,7 @@ class DlgCrawlerService:
                 self.logger.error(f"[ERR logging Audit Log] {source.name} -> Error ({str(exc)[:120]})")
 
     def scrape_one(self, source: LspMaster) -> Tuple[CrawlStatus, Optional[str], Optional[str], List[Dict[str, Any]]]:
-        scrape_ts = dt.datetime.utcnow()
+        scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
         rules = load_rules(source.rules_json) if source.rules_json else {}
         pre_click_js = rules.get("pre_click_js")
         ocr_rules = rules.get("ocr") or {}

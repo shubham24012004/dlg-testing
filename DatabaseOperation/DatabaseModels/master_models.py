@@ -4,35 +4,10 @@ SQLAlchemy ORM models for DLG analysis master tables.
 from sqlalchemy import Column, String, Boolean, Float, Enum as SAEnum, Integer, ForeignKey, TIMESTAMP, JSON
 from sqlalchemy.orm import declarative_base
 from typing import Optional
-import os
-from enum import Enum
 from dataclasses import dataclass
+from utils.constants import AuditAction, CrawlStatus, LSPType
 
 Base = declarative_base()
-
-
-class AuditAction(Enum):
-    INSERT_LSP = os.getenv("AUDIT_ACTION_INSERT_LSP", "INSERT_LSP")
-    UPDATE_LSP = os.getenv("AUDIT_ACTION_UPDATE_LSP", "UPDATE_LSP")
-    DELETE_LSP = os.getenv("AUDIT_ACTION_DELETE_LSP", "DELETE_LSP")
-    INSERT_USER = os.getenv("AUDIT_ACTION_INSERT_USER", "INSERT_USER")
-    UPDATE_USER = os.getenv("AUDIT_ACTION_UPDATE_USER", "UPDATE_USER")
-    DELETE_USER = os.getenv("AUDIT_ACTION_DELETE_USER", "DELETE_USER")
-    RESET_PWD = os.getenv("AUDIT_ACTION_RESET_PWD", "RESET_PWD")
-    LOGIN = os.getenv("AUDIT_ACTION_LOGIN", "LOGIN")
-    LOGOUT = os.getenv("AUDIT_ACTION_LOGOUT", "LOGOUT")
-    URL_FINDER = os.getenv("AUDIT_ACTION_URL_FINDER", "URL_FINDER")
-    LSP_SUMMARY = os.getenv("AUDIT_ACTION_LSP_SUMMARY", "LSP_SUMMARY")
-    CRAWL = os.getenv("AUDIT_ACTION_CRAWL", "CRAWL")
-
-
-class CrawlStatus(Enum):
-    COMPLETED = os.getenv("CRAWL_STATUS_COMPLETED", "Completed")  # All data fetched successfully
-    PARTIAL = os.getenv("CRAWL_STATUS_PARTIAL", "Partial")  # Some data missing Amount/Portfolio/As on date
-    ERROR = os.getenv("CRAWL_STATUS_ERROR", "Error")  # Error during fetch/parse
-    MISSING = os.getenv("CRAWL_STATUS_MISSING", "Missing")  # DLG URL MISSING
-    STALE = os.getenv("CRAWL_STATUS_STALE", "Stale")  # as on date MISSING
-    NO_DATA = os.getenv("CRAWL_STATUS_NO_DATA", "NoData")  # PAGE AVAILABLE DATA NOT AVAILABLE
 
 
 @dataclass
@@ -90,7 +65,7 @@ class AuditLog(Base):
     auto_manual = Column(String)
     user_id = Column(String)
     payload = Column(JSON)
-    action_taken = Column(SAEnum(AuditAction), nullable=False)
+    action_taken = Column(String, nullable=False)
     log_timestamp = Column(TIMESTAMP(timezone=True))
 
 
@@ -113,7 +88,6 @@ class Users(Base):
 @dataclass
 class UserInput:
     username: str
-    password: str
     role: str
     firstname: Optional[str] = None
     lastname: Optional[str] = None

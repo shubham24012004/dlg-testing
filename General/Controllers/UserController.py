@@ -7,6 +7,7 @@ from utils.logger_config import logger_method
 from utils.jwt_utils import create_jwt_token, token_required
 from General.Service.UserService import UserService
 from DatabaseOperation.DatabaseModels.master_models import UserInput, UserUpdate
+from utils.constants import default_password
 
 user_bp = Blueprint('user_bp', __name__)
 logger = logger_method(__name__)
@@ -47,7 +48,7 @@ def add_user() -> Any:
 
         user_input = UserInput(**data)
         # Validate input
-        if not user_input.username or not user_input.password or not user_input.role or not user_input.firstname:
+        if not user_input.username or not user_input.role or not user_input.firstname:
             logger.info(f"{user_info} Register attempt with missing required fields")
             return jsonify({
                 "status": HTTPStatus.BAD_REQUEST,
@@ -156,14 +157,14 @@ def update_user() -> Any:
         }), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@user_bp.post("/api/user/reset-password")
-def reset_password() -> Any:
+@user_bp.post("/api/user/update-password")
+@token_required
+def update_password() -> Any:
     """Reset user password.
     
     Request body:
         {
             "username": "username"
-            "role": "role"
             "password": "newpassword"
         }
     """
@@ -171,7 +172,6 @@ def reset_password() -> Any:
     username = user_claims['username']
     user_role = user_claims.get('role', 'unknown')
     user_info = f"[User: {username}, Role: {user_role}]"
-    user_id = user_claims.get('user_id')
 
     try:
         data = request.get_json(silent=True)
@@ -184,35 +184,98 @@ def reset_password() -> Any:
                 "user_info": user_info
             }), HTTPStatus.BAD_REQUEST
 
-        new_password = data.get('password')
-        if not new_password:
-            logger.info(f"{user_info} Reset password attempt with missing password")
+        username = data.get("username")
+        new_password = data.get("password")
+
+        if not username or not new_password:
+            logger.info(f"{user_info} Reset password attempt with missing user_id/password")
             return jsonify({
                 "status": HTTPStatus.BAD_REQUEST,
                 "message": "Password is required",
                 "user_info": user_info
             }), HTTPStatus.BAD_REQUEST
 
-        user_input = UserUpdate(**data)
-
         # Reset password
         user_service = UserService(user_claims)
-        success, error, result = user_service.reset_password(user_details=user_input)
+        success, error = user_service.set_password(username, new_password, reset_password=False)
 
         if not success:
-            logger.warning(f"{user_info} Failed to reset password for user {user_input.username}: {error}")
+            logger.warning(f"{user_info} Failed to reset password for user {username}: {error}")
             return jsonify({
                 "status": HTTPStatus.BAD_REQUEST,
                 "message": error,
                 "user_info": user_info
             }), HTTPStatus.BAD_REQUEST
 
-        logger.info(f"{user_info} Successfully reset password for user {user_input.username}")
+        logger.info(f"{user_info} Successfully reset password for user {username}")
         return jsonify({
             "status": HTTPStatus.OK,
             "message": "Password reset successfully",
             "user_info": user_info,
-            "data": result
+            "data": None
+        }), HTTPStatus.OK
+
+    except Exception as exc:
+        logger.critical(f"{user_info} Reset password error: {str(exc)}", exc_info=True)
+        return jsonify({
+            "status": HTTPStatus.INTERNAL_SERVER_ERROR,
+            "message": "Password reset failed",
+            "user_info": user_info
+        }), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_bp.post("/api/user/reset-password")
+@token_required
+def reset_password() -> Any:
+    """Reset user password.
+
+    Request body:
+        {
+            "username": "username"
+            "password": "newpassword"
+        }
+    """
+    user_claims = request.user_claims
+    username = user_claims['username']
+    user_role = user_claims.get('role', 'unknown')
+    user_info = f"[User: {username}, Role: {user_role}]"
+
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            logger.info(f"{user_info} Reset password attempt with no username")
+            return jsonify({
+                "status": HTTPStatus.BAD_REQUEST,
+                "message": "Request body is required",
+                "user_info": user_info
+            }), HTTPStatus.BAD_REQUEST
+
+        if not data['username']:
+            logger.info(f"{user_info} Reset password attempt with no username")
+            return jsonify({
+                "status": HTTPStatus.BAD_REQUEST,
+                "message": "Request body is required",
+                "user_info": user_info
+            }), HTTPStatus.BAD_REQUEST
+
+        # Reset password
+        user_service = UserService(user_claims)
+        success, error = user_service.set_password(data['username'], default_password, reset_password=True)
+
+        if not success:
+            logger.warning(f"{user_info} Failed to reset password for user {username}: {error}")
+            return jsonify({
+                "status": HTTPStatus.BAD_REQUEST,
+                "message": error,
+                "user_info": user_info
+            }), HTTPStatus.BAD_REQUEST
+
+        logger.info(f"{user_info} Successfully reset password for user {username}")
+        return jsonify({
+            "status": HTTPStatus.OK,
+            "message": "Password reset successfully",
+            "user_info": user_info,
+            "data": None
         }), HTTPStatus.OK
 
     except Exception as exc:

@@ -52,7 +52,7 @@ def login() -> Any:
         if not username or not password:
             logger.info(f"{user_info} Login attempt with missing required fields")
             return jsonify({
-                "status": int(HTTPStatus.BAD_REQUEST),
+                "status": HTTPStatus.BAD_REQUEST,
                 "message": "Username and password are required",
                 "user_info": user_info
             }), HTTPStatus.BAD_REQUEST
@@ -65,7 +65,7 @@ def login() -> Any:
         if not is_authenticated:
             logger.info(f"{user_info} Login failed: {error}")
             return jsonify({
-                "status": int(HTTPStatus.UNAUTHORIZED),
+                "status": HTTPStatus.UNAUTHORIZED,
                 "message": error or "Authentication failed"
             }), HTTPStatus.UNAUTHORIZED
 
@@ -73,12 +73,12 @@ def login() -> Any:
         token = create_jwt_token(
             user_id=user_data["user_id"],
             username=user_data["username"],
-            additional_claims={"role": user_data.get("role")}
+            additional_claims={"role": user_data["role"]}
         )
         user_info = f"[User: {user_data['username']}, Role: {user_data.get('role', 'unknown')}]"
         logger.info(f"{user_info} User logged in successfully")
         return jsonify({
-            "status": int(HTTPStatus.OK),
+            "status": HTTPStatus.OK,
             "message": "Login successful",
             "data": {
                 "token": token,

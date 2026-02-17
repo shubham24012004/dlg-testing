@@ -1,6 +1,7 @@
 """JWT token utilities for authentication."""
 import os
 import jwt
+import datetime as dt
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Tuple
 from functools import wraps
@@ -32,8 +33,8 @@ def create_jwt_token(user_id: int, username: str, additional_claims: Optional[Di
     payload = {
         "user_id": user_id,
         "username": username,
-        "iat": datetime.utcnow(),
-        "exp": datetime.utcnow() + timedelta(hours=JWTConfig.EXPIRATION_HOURS),
+        "iat": datetime.now(tz=dt.timezone.utc),
+        "exp": datetime.now(tz=dt.timezone.utc) + timedelta(hours=JWTConfig.EXPIRATION_HOURS),
     }
 
     if additional_claims:

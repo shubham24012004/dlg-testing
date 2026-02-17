@@ -8,7 +8,8 @@ from typing import Optional, Any, Dict
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
-from DatabaseOperation.DatabaseModels.master_models import AuditAction, AuditLog
+from DatabaseOperation.DatabaseModels.master_models import AuditLog
+from utils.constants import AuditAction
 from utils.logger_config import logger_method
 
 
@@ -63,11 +64,11 @@ class AuditLogManager:
 
         return AuditLog(
             lsp_id=lsp_id,
-            action_taken=action_taken,
+            action_taken=action_taken.value,
             auto_manual=auto_manual,
             user_id=user_id,
             payload=payload,
-            log_timestamp=dt.datetime.utcnow(),
+            log_timestamp=dt.datetime.now(tz=dt.timezone.utc),
         )
 
     def list_audit_log(self, start_date, end_date, lsp_id, action_str, page, page_size):
@@ -79,34 +80,14 @@ class AuditLogManager:
                 query = query.filter(AuditLog.lsp_id == lsp_id)
 
             # --- action filter: supports AuditAction or string like "LOGIN" ---
-            if action_str:
-                action_enum = None
-                if isinstance(action_str, AuditAction):
-                    action_enum = action_str
-                elif isinstance(action_str, str):
-                    s = action_str.strip()
-                    # Prefer match by Enum NAME, e.g., "LOGIN"
-                    try:
-                        action_enum = AuditAction[s]
-                    except Exception:
-                        # Fallback: match by Enum VALUE if caller passes the value
-                        try:
-                            action_enum = AuditAction(s)
-                        except Exception:
-                            action_enum = None
-
-                if action_enum:
-                    query = query.filter(AuditLog.action_taken == action_enum)
+            if action_str:                
+                query = query.filter(AuditLog.action_taken == action_str)
 
             # --- date filters: convert date -> datetime bounds (recommended) ---
-            if start_date:
-                if isinstance(start_date, dt.date) and not isinstance(start_date, dt.datetime):
-                    start_date = dt.datetime.combine(start_date, dt.time.min)
+            if start_date:                
                 query = query.filter(AuditLog.log_timestamp >= start_date)
 
-            if end_date:
-                if isinstance(end_date, dt.date) and not isinstance(end_date, dt.datetime):
-                    end_date = dt.datetime.combine(end_date, dt.time.max)
+            if end_date:                
                 query = query.filter(AuditLog.log_timestamp <= end_date)
 
             total_count = query.count()

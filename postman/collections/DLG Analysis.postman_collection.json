@@ -33,7 +33,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyODEwMzk4MiwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTU5ODU2MCwiZXhwIjoxNzY5Njg0OTYwLCJyb2xlIjoiYWRtaW4ifQ.ArbIj4gVgOpkVQQ1xUADD1AzCMeFDGK_PD6sJiVLrpg",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
                   "type": "string"
                 }
               ]
@@ -50,7 +50,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/lsp_master?active=true&per_page=50",
+              "raw": "http://127.0.0.1:5000/api/lsp_master?lsp_id=35",
               "protocol": "http",
               "host": [
                 "127",
@@ -65,12 +65,8 @@
               ],
               "query": [
                 {
-                  "key": "active",
-                  "value": "true"
-                },
-                {
-                  "key": "per_page",
-                  "value": "50"
+                  "key": "lsp_id",
+                  "value": "35"
                 }
               ]
             },
@@ -333,7 +329,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMDIxMTMyMywidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDgwMjA4MiwiZXhwIjoxNzcwODg4NDgyLCJyb2xlIjoiYWRtaW4ifQ.K75R_81vYUTXfHFUgSIm9ln4qU9cKkMYGnWX5r80IwY",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMTA5MzA5NiwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MTIzNTM5MiwiZXhwIjoxNzcxMzIxNzkyLCJyb2xlIjoiYWRtaW4ifQ.kyGhlepd-jXm7Ltn0rOFSKS0kI14I_XCO7HZiiiFB3w",
                   "type": "string"
                 }
               ]
@@ -350,7 +346,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/scrape?lsp_id=62",
+              "raw": "http://127.0.0.1:5000/api/scrape?lsp_id=67",
               "protocol": "http",
               "host": [
                 "127",
@@ -366,7 +362,7 @@
               "query": [
                 {
                   "key": "lsp_id",
-                  "value": "62"
+                  "value": "67"
                 }
               ]
             }
@@ -384,7 +380,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyODEwMzk4MiwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTU5ODU2MCwiZXhwIjoxNzY5Njg0OTYwLCJyb2xlIjoiYWRtaW4ifQ.ArbIj4gVgOpkVQQ1xUADD1AzCMeFDGK_PD6sJiVLrpg",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMTA5MzA5NiwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MTIzNTM5MiwiZXhwIjoxNzcxMzIxNzkyLCJyb2xlIjoiYWRtaW4ifQ.kyGhlepd-jXm7Ltn0rOFSKS0kI14I_XCO7HZiiiFB3w",
                   "type": "string"
                 }
               ]
@@ -401,7 +397,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/dlg_url?lsp_id=38",
+              "raw": "http://127.0.0.1:5000/api/dlg_url?lsp_id=33",
               "protocol": "http",
               "host": [
                 "127",
@@ -417,7 +413,7 @@
               "query": [
                 {
                   "key": "lsp_id",
-                  "value": "38"
+                  "value": "33"
                 }
               ]
             }
@@ -543,7 +539,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"username\": \"admin@email.com\",\r\n    \"password\": \"admin123\",\r\n    \"role\": \"admin\"\r\n}",
+              "raw": "{\r\n    \"username\": \"admin@email.com\",\r\n    \"password\": \"newpassword\",\r\n    \"role\": \"admin\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -749,6 +745,53 @@
               "bearer": [
                 {
                   "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"start_date\": \"15-12-2025\",\r\n    \"end_date\": \"31-01-2026\"\r\n}"
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/dashboard/lsp_raw?lsp_id=35",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "dashboard",
+                "lsp_raw"
+              ],
+              "query": [
+                {
+                  "key": "lsp_id",
+                  "value": "35"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Enums",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
                   "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyMDA4NjMzNCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTcwNjk1OCwiZXhwIjoxNzY5NzkzMzU4LCJyb2xlIjoiYWRtaW4ifQ.Cf4KbG89gf5Qz3jRn3-VHYNZK-rmYadelLyebRuSmvw",
                   "type": "string"
                 }
@@ -761,7 +804,7 @@
               "raw": "{\r\n    \"start_date\": \"15-12-2025\",\r\n    \"end_date\": \"31-01-2026\"\r\n}"
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/dashboard/all_lsp_latest_summary",
+              "raw": "http://127.0.0.1:5000/api/dashboard/enums",
               "protocol": "http",
               "host": [
                 "127",
@@ -773,7 +816,7 @@
               "path": [
                 "api",
                 "dashboard",
-                "all_lsp_latest_summary"
+                "enums"
               ]
             }
           },
@@ -792,7 +835,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTMzODI5NSwiZXhwIjoxNzcxNDI0Njk1LCJyb2xlIjoiYWRtaW4ifQ.kT1fN4PXGz1mUKfMlhzPWhxRRLos7G7egnqr1UvOOcg",
                   "type": "string"
                 }
               ]
@@ -801,7 +844,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"username\": \"user1@email.com\",\r\n    \"password\": \"user123\",\r\n    \"role\": \"admin\",\r\n    \"firstname\": \"User 1\"\r\n}",
+              "raw": "{\r\n    \"username\": \"user4@email.com\",    \r\n    \"role\": \"user\",\r\n    \"firstname\": \"User 4\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -834,7 +877,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTMzODI5NSwiZXhwIjoxNzcxNDI0Njk1LCJyb2xlIjoiYWRtaW4ifQ.kT1fN4PXGz1mUKfMlhzPWhxRRLos7G7egnqr1UvOOcg",
                   "type": "string"
                 }
               ]
@@ -843,7 +886,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{   \"id\": 2,\r\n    \"password\": \"user321\",    \r\n    \"firstname\": \"User\",\r\n    \"role\": \"admin\",\r\n    \"username\": \"user1@email.com\"\r\n}",
+              "raw": "{   \"id\": 2,\r\n    \"password\": \"user321\",    \r\n    \"firstname\": \"User\",\r\n    \"lastname\": \"One\",\r\n    \"active\": \"False\",\r\n    \"role\": \"admin\",\r\n    \"username\": \"user1@email.com\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -876,7 +919,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTMzODI5NSwiZXhwIjoxNzcxNDI0Njk1LCJyb2xlIjoiYWRtaW4ifQ.kT1fN4PXGz1mUKfMlhzPWhxRRLos7G7egnqr1UvOOcg",
                   "type": "string"
                 }
               ]
@@ -884,7 +927,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "http://127.0.0.1:5000/api/users?role=admin",
+              "raw": "http://127.0.0.1:5000/api/users?active=False",
               "protocol": "http",
               "host": [
                 "127",
@@ -899,9 +942,95 @@
               ],
               "query": [
                 {
-                  "key": "role",
-                  "value": "admin"
+                  "key": "active",
+                  "value": "False"
                 }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "reset-password",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTMzODI5NSwiZXhwIjoxNzcxNDI0Njk1LCJyb2xlIjoiYWRtaW4ifQ.kT1fN4PXGz1mUKfMlhzPWhxRRLos7G7egnqr1UvOOcg",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"username\": \"admin@email.com\"    \r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/user/reset-password",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "user",
+                "reset-password"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "update-password",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTMzODI5NSwiZXhwIjoxNzcxNDI0Njk1LCJyb2xlIjoiYWRtaW4ifQ.kT1fN4PXGz1mUKfMlhzPWhxRRLos7G7egnqr1UvOOcg",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"username\": \"admin@email.com\",\r\n    \"password\": \"newpassword\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/user/update-password",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "user",
+                "update-password"
               ]
             }
           },

@@ -1,6 +1,6 @@
 import datetime as dt
 from http import HTTPStatus
-from DatabaseOperation.DatabaseModels.master_models import AuditAction
+from utils.constants import AuditAction
 from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 from flask import request, jsonify, Blueprint

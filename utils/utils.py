@@ -439,7 +439,7 @@ def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dic
     # Check if this is FinAGG format
     if "FinAGG" in text or "Portfolio OS as on" in text:
         # Use dedicated FinAGG parser  
-        scrape_ts = dt.datetime.utcnow()
+        scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
         return parse_finagg_dlg_plain_text(text, "FinAGG Services Private Limited", scrape_ts)
 
     rows: List[Dict[str, Any]] = []
@@ -669,7 +669,7 @@ def extract_dlg_from_plain_text(
       LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
     """
     if scrape_ts is None:
-        scrape_ts = dt.datetime.utcnow()
+        scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
 
     text = _clean_html_to_text(html)
 
@@ -862,7 +862,7 @@ def parse_cred_style_dlg_plain_text(
     Returns rows with:
       LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
     """
-    scrape_ts = dt.datetime.utcnow()
+    scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
 
     # Normalize newlines and spaces
     lines = [ln.strip() for ln in text.splitlines()]

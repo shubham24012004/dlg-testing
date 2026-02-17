@@ -60,7 +60,7 @@ class DlgCrawlerManager:
                 lender = row.lender or ""
                 portfolio = row.portfolio or ""
                 as_on_ts = row.as_on_timestamp
-                scrape_ts = row.scrape_timestamp or dt.datetime.utcnow()
+                scrape_ts = row.scrape_timestamp or dt.datetime.now(tz=dt.timezone.utc)
 
                 # Coerce/validate amount: parse strings like '1,234,567' into floats (crores)
                 amount_val = None

@@ -152,7 +152,7 @@ class LspMasterManager:
             if lsp_name:
                 search_name = f'%{lsp_name}%'
                 query = query.filter(
-                    or_(LspMaster.name.like(search_name), LspMaster.brand_name.like(search_name))
+                    or_(LspMaster.name.ilike(search_name), LspMaster.brand_name.ilike(search_name))
                 )
             if lsp_type:
                 search_type = f"%{lsp_type}%"

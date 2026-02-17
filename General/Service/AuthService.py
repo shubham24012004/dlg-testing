@@ -2,8 +2,9 @@
 from typing import Optional, Tuple, Dict, Any
 from utils.logger_config import logger_method
 from General.Managers.AuthManager import AuthManager
+from General.Managers.UserManager import UserManager
 from General.Service.AuditLogService import AuditLogService
-from DatabaseOperation.DatabaseModels.master_models import AuditAction
+from utils.constants import AuditAction
 
 
 class AuthService:
@@ -13,6 +14,7 @@ class AuthService:
         self.logger = logger_method(__name__)
         self.user_claims = user_claims
         self.auth_manager = AuthManager(user_claims)
+        self.use_manager = UserManager(user_claims)
         self.auditlog_service = AuditLogService(user_claims)
 
     def authenticate_user(self, username: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
@@ -56,20 +58,20 @@ class AuthService:
                 )
                 return False, None, error_msg
             
-            if not user.password or user.password != password:
+            if user.password is None or user.password != password:
                 error_msg = "Invalid password"
-                # (audit log failed login if you want)
                 return False, None, error_msg
-            # todo check password
-            # decrypt pwd from db and check with the pwd and then return success or invalid pwd message
-            # User authenticated successfully
 
-            # todo: update last login in user table to now.
+            # todo decrypt pwd from db and check with the pwd and then return success or invalid pwd message
+
+            self.logger.info(f"User authenticated successfully: {username}")
+            self.use_manager.update_last_login(user.id)
 
             user_data = {
                 "user_id": user.id,  # Simple user ID generation
                 "username": user.username,
-                "role": user.role
+                "role": user.role,
+                "reset_password": user.reset_password
             }
 
             user_id = username

@@ -1,15 +1,12 @@
 """
 AuditLogService with DB support for audit logs.
 """
-import datetime as dt
-import json
 from typing import Optional, Any, Dict
 
 from sqlalchemy import desc, asc, or_
 from sqlalchemy.exc import SQLAlchemyError
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
-from DatabaseOperation.DatabaseModels.master_models import Users, Base, UserInput
-from utils.logger_config import logger_method
+from DatabaseOperation.DatabaseModels.master_models import Users
 
 
 class AuthManager:

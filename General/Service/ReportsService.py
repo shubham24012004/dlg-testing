@@ -4,7 +4,7 @@ import datetime as dt
 from utils.logger_config import logger_method
 from General.Managers.ReportsManager import ReportsManager
 from General.Service.AuditLogService import AuditLogService
-from DatabaseOperation.DatabaseModels.master_models import AuditAction
+from utils.constants import AuditAction
 
 
 class ReportsService:

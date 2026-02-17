@@ -45,7 +45,7 @@ class UserManager:
                 self.logger.error(f"{self._get_user_info()} User already exists")
                 return None
 
-            now = dt.datetime.utcnow()
+            now = dt.datetime.now(tz=dt.timezone.utc)
             user = Users(
                 username=user_details.username,
                 firstname=user_details.firstname,
@@ -96,9 +96,12 @@ class UserManager:
             if user_details.reset_password is not None:
                 existing_user.reset_password = user_details.reset_password
             if user_details.active is not None:
-                existing_user.active = user_details.active
+                if user_details.active.lower() == 'true':
+                    existing_user.active = True
+                else:
+                    existing_user.active = False
 
-            existing_user.modify_date = dt.datetime.utcnow()
+            existing_user.modify_date = dt.datetime.now(tz=dt.timezone.utc)
 
             session.add(existing_user)
             session.commit()
@@ -143,7 +146,7 @@ class UserManager:
             if username:
                 search_name = f'%{username}%'
                 query = query.filter(
-                    or_(Users.username.like(search_name), Users.firstname.like(search_name))
+                    or_(Users.username.ilike(search_name), Users.firstname.ilike(search_name))
                 )
             # capture total count before pagination
             total_count = query.count()
@@ -175,3 +178,42 @@ class UserManager:
         finally:
             session.close()
 
+    def update_last_login(self, user_id: int) -> bool:
+        session = self.conn_factory.get_session()
+        try:
+            existing_user = session.query(Users).filter_by(id=user_id).one_or_none()
+            if not existing_user:
+                self.logger.warning(f"{self._get_user_info()} User not found: {user_id}")
+                return False
+
+            existing_user.last_login = dt.datetime.now(tz=dt.timezone.utc)
+            session.add(existing_user)
+            session.commit()
+            self.logger.info(f"{self._get_user_info()} Last login updated for user ID: {user_id}")
+            return True
+        except SQLAlchemyError:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def set_password(self, username: str, password: str, reset_password: bool = False) -> bool:
+        session = self.conn_factory.get_session()
+        try:
+            existing_user = session.query(Users).filter_by(username=username).one_or_none()
+            if not existing_user:
+                self.logger.warning(f"{self._get_user_info()} User not found: {username}")
+                return None
+            
+            existing_user.password = password
+            existing_user.reset_password = reset_password
+            existing_user.modify_date = dt.datetime.now(tz=dt.timezone.utc)
+
+            session.add(existing_user)
+            session.commit()
+        except SQLAlchemyError:
+            session.rollback()
+            raise
+        finally:            
+            session.close()
+        return True
