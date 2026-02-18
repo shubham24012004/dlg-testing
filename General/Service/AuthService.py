@@ -71,7 +71,8 @@ class AuthService:
                 "user_id": user.id,  # Simple user ID generation
                 "username": user.username,
                 "role": user.role,
-                "reset_password": user.reset_password
+                "reset_password": user.reset_password,
+                "active": user.active
             }
 
             user_id = username
