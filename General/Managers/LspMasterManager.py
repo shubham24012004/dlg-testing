@@ -81,6 +81,8 @@ class LspMasterManager:
                     existing_lsp.brand_name = lm.brand_name
                 if lm.lsp_type is not None:
                     existing_lsp.lsp_type = lm.lsp_type
+                
+                existing_lsp.active = lm.active
                 # existing_lsp.rules_json = lm.rules_json
                 # existing_lsp.fetch_hint = lm.fetch_hint
                 # existing_lsp.parse_hint = lm.parse_hint
@@ -147,6 +149,8 @@ class LspMasterManager:
             query = session.query(LspMaster).order_by(asc(LspMaster.name))
             if active_only:
                 query = query.filter(LspMaster.active.is_(True))
+            else:
+                query = query.filter(LspMaster.active.is_(False))
             if lsp_id:
                 query = query.filter_by(id=lsp_id)
             if lsp_name:
