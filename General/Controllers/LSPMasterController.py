@@ -145,6 +145,10 @@ def handle_update_lsp_master():
     try:
         lsp_master = LspMaster(**payload)
         lsp_service = LSPMasterService(user_claims)
+        if lsp_master.active.lower() == 'true':
+            lsp_master.active = True
+        else:
+            lsp_master.active = False
         lsp = lsp_service.update(lsp_master)
         if not lsp:
             logger.warning(f"{user_info} LSP Master record not found for update")
