@@ -130,6 +130,7 @@ def lsp_raw():
              "message": f"Error during LSP raw data retrieval for LSP ID: {lsp_id}: {str(exc)}",
              "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
 
+
 @dashboard_bp.get("/api/dashboard/enums")
 def get_enums():
     """Return all enum values for frontend use."""

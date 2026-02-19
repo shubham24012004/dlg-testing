@@ -47,20 +47,21 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
         header_overrides = {k: v for k, v in BROWSER_HEADERS.items() if k.lower() != "user-agent"}
         with sync_playwright() as context_manager:
             browser = context_manager.chromium.launch(headless=True,
-                                                    args=["--disable-blink-features=AutomationControlled"])
+                                                      args=["--disable-blink-features=AutomationControlled"])
             context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=header_overrides)
             page = context.new_page()
             page.goto(url, wait_until="networkidle", timeout=timeout_ms)
-            
+
             final_url = url
             if pre_click_js:
                 # Execute JavaScript - it may return a URL to navigate to
                 result = page.evaluate(pre_click_js)
-                
+
                 # If JavaScript returns a URL string, handle it appropriately
-                if result and isinstance(result, str) and (result.startswith('http://') or result.startswith('https://')):
+                if result and isinstance(result, str) and (
+                        result.startswith('http://') or result.startswith('https://')):
                     final_url = result
-                    
+
                     # If it's a PDF, close browser and download directly
                     if final_url.lower().endswith('.pdf'):
                         context.close()
@@ -83,10 +84,10 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
                         page.wait_for_load_state("networkidle", timeout=5000)
                     except:
                         pass
-                
+
                 page.wait_for_timeout(2000)
                 final_url = page.url
-            
+
             # Check if we're on a PDF page
             if final_url.lower().endswith('.pdf'):
                 # We're on a PDF - download it using requests
@@ -101,7 +102,7 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
                     body=response.content,
                     fetch_mode_used="playwright+requests",
                 )
-            
+
             # Otherwise return HTML content
             html = page.content().encode("utf-8", errors="ignore")
             context.close()
@@ -115,7 +116,6 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
             )
     except Exception as ex:
         raise RuntimeError(f"Failed to fetch page with Playwright: {ex}")
-        
 
 
 def _clean_html_to_text(html: bytes) -> str:
@@ -142,35 +142,35 @@ def parse_date_any(s: Any) -> Optional[dt.datetime]:
         txt = str(s).strip()
         if not txt:
             return None
-        
+
         # Remove ordinal suffixes (1st, 2nd, 3rd, 4th, etc.) to help dateparser
         txt_cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', txt)
-        
+
         # Detect Month-YYYY format (e.g., "Jan-2026") before preprocessing
         month_yyyy_match = re.search(r"([A-Za-z]{3,9})-(\d{4})\b", txt_cleaned)
-        
+
         # Handle Month-YYYY format (e.g., "Jan-2026" -> "Jan 2026")
         txt_cleaned = re.sub(r"([A-Za-z]{3,9})-(\d{4})\b", r"\1 \2", txt_cleaned)
-        
+
         # Detect Month'YY format before preprocessing
         # Includes regular apostrophe ('), left quote (\u2018), and right quote (\u2019)
         month_yy_match = re.search(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", txt_cleaned)
-        
+
         # Handle Month'YY format (e.g., "Dec'25" -> "Dec 2025")
         txt_cleaned = re.sub(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", r"\1 20\2", txt_cleaned)
-        
+
         # Handle DD-Month-YY format (e.g., "31-January-26" -> "31-January-2026")
         txt_cleaned = re.sub(r"(\d{1,2})-([A-Za-z]{3,9})-(\d{2})\b", r"\1-\2-20\3", txt_cleaned)
-        
+
         try:
             parsed = dateparser.parse(txt_cleaned, dayfirst=True, fuzzy=True)
-            
+
             # If we parsed a Month'YY or Month-YYYY format, set to last day of that month
             # (Financial disclosures with "as on Dec'25" or "as on Jan-2026" mean end of month)
             if parsed and (month_yy_match or month_yyyy_match):
                 last_day = calendar.monthrange(parsed.year, parsed.month)[1]
                 parsed = parsed.replace(day=last_day)
-            
+
             return parsed
         except Exception:
             return None
@@ -182,7 +182,7 @@ def calculate_previous_month_end(reference_date: Optional[dt.datetime] = None) -
     """Calculate the last day of the previous month relative to reference_date."""
     if reference_date is None:
         reference_date = dt.datetime.now()
-    
+
     # First day of current month
     first_of_month = reference_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     # Last day of previous month
@@ -194,7 +194,7 @@ def calculate_previous_quarter_end(reference_date: Optional[dt.datetime] = None)
     """Calculate the last day of the previous quarter (Mar 31, Jun 30, Sep 30, Dec 31)."""
     if reference_date is None:
         reference_date = dt.datetime.now()
-    
+
     # Determine current quarter
     current_month = reference_date.month
     if current_month <= 3:
@@ -223,9 +223,9 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
     """
     if not date_string:
         return None
-    
+
     date_string = date_string.strip()
-    
+
     # Try format-specific parsing
     if format_hint == "DD.MM.YYYY":
         # Match DD.MM.YYYY
@@ -236,7 +236,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
                 return dt.datetime(int(year), int(month), int(day))
             except ValueError:
                 pass
-    
+
     elif format_hint == "DD-MM-YYYY":
         # Match DD-MM-YYYY
         match = re.match(r'(\d{1,2})-(\d{1,2})-(\d{4})', date_string)
@@ -246,7 +246,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
                 return dt.datetime(int(year), int(month), int(day))
             except ValueError:
                 pass
-    
+
     elif format_hint in ["DD Month YYYY", "DD Month YYYY with ordinal"]:
         # Remove ordinal suffixes (st, nd, rd, th)
         cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)', r'\1', date_string)
@@ -255,7 +255,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
             return dateparser.parse(cleaned, dayfirst=True)
         except Exception:
             pass
-    
+
     elif format_hint == "Mon YYYY":
         # Parse month name and year, return last day of that month
         try:
@@ -267,7 +267,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
                 return last_day.replace(hour=0, minute=0, second=0, microsecond=0)
         except Exception:
             pass
-    
+
     # Fallback to general parsing
     return parse_date_any(date_string)
 
@@ -318,10 +318,10 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
         date_patterns = [
             # as of 1st Jan, 2025 (ordinal + month abbreviation with comma)
             r"as\s+of\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+,?\s+\d{4})",
-            
+
             # As on 31st October 25 (ordinal + 2-digit year)
             r"As\s+on\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{2,4})",
-            
+
             # As on November 30, 2025
             r"As\s+on\s+([A-Za-z]+ \d{1,2}, \d{4})",
 
@@ -330,10 +330,10 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
 
             # As on 30.11.2025
             r"As\s+on\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4})",
-            
+
             # as on Dec'25 or as on Dec 25 (Month'YY format with "as on" prefix)
             r"as\s+on\s+([A-Za-z]{3,9}['\u2018\u2019]?\s*\d{2})",
-            
+
             # Dec'25 or (Dec'25) - Month'YY format without prefix (matches Unicode quotes)
             r"([A-Za-z]{3,9}['\u2018\u2019]\d{2})\b",
         ]
@@ -341,12 +341,12 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
         last_valid_header = None  # Track header across pages for multi-page tables
         ason_text_global = ""  # Track date across all pages (usually on page 1 only)
-        
+
         with pdfplumber.open(io.BytesIO(fetch.body)) as pdf:
             for page in pdf.pages:
                 ason_text = ""
                 text = page.extract_text() or ""
-                
+
                 for pattern in date_patterns:
                     match = re.search(pattern, text, re.IGNORECASE)
                     if match:
@@ -355,7 +355,7 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                         if not ason_text_global:
                             ason_text_global = ason_text
                         break
-                
+
                 # Use the globally found date if current page doesn't have one
                 if not ason_text and ason_text_global:
                     ason_text = ason_text_global
@@ -367,11 +367,11 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                 for tbl in tables:
                     if not tbl or len(tbl) < 2:
                         continue
-                        
+
                     # Check if first row looks like a header or data
                     first_row = [str(x).strip() if x else "" for x in tbl[0]]
                     is_continuation_page = False
-                    
+
                     # Detect continuation pages: first row contains "Portfolio" pattern (data, not header)
                     if first_row and len(first_row) == 1:
                         first_cell = first_row[0]
@@ -379,7 +379,7 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                         # Examples: "Portfolio 6.2 -", "23\nPortfolio 8.10", "Portfolio 1.1\n-"
                         if re.search(r'Portfolio\s+\d+\.\d+', first_cell, re.IGNORECASE):
                             is_continuation_page = True
-                    
+
                     if is_continuation_page and last_valid_header:
                         # Use header from previous page and process ALL rows as data
                         header = last_valid_header
@@ -387,45 +387,47 @@ def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
                     else:
                         # Normal table with header in first row
                         header = first_row
-                        
+
                         # If headers have duplicates or empties, use col_0, col_1, col_2 instead
                         if len(header) != len(set(h for h in header if h)) or any(not h for h in header):
                             header = [f"col_{i}" for i in range(len(header))]
                         else:
                             # Save this as a valid header for potential continuation pages
                             last_valid_header = header
-                        
+
                         data_rows = tbl[1:]  # Skip header row
 
                     for r in data_rows:
                         vals = [str(x).strip() if x else "" for x in r]
                         if not any(v.strip() for v in vals):
                             continue
-                        
+
                         # Check if any cell contains newlines with multiple data entries
                         # If so, split into multiple rows (e.g., Bhanix PDF with merged data)
                         split_rows = []
                         has_multiline = False
                         multiline_col_idx = -1
-                        
+
                         for idx, val in enumerate(vals):
                             if '\n' in val and len([line for line in val.split('\n') if line.strip()]) > 1:
                                 # Found a cell with multiple non-empty lines
                                 has_multiline = True
                                 multiline_col_idx = idx
                                 break
-                        
+
                         if has_multiline and multiline_col_idx >= 0:
                             # Split the multiline cell into separate rows
                             lines = [line.strip() for line in vals[multiline_col_idx].split('\n') if line.strip()]
                             # Filter out "Total" lines as they are summary rows
-                            lines = [line for line in lines if not re.match(r'^Total\s*\d*\.?\d*$', line, re.IGNORECASE)]
-                            
+                            lines = [line for line in lines if
+                                     not re.match(r'^Total\s*\d*\.?\d*$', line, re.IGNORECASE)]
+
                             for line in lines:
                                 # Create a new row for each line
                                 new_vals = vals.copy()
                                 new_vals[multiline_col_idx] = line
-                                row = {header[i] if i < len(header) else f"col_{i}": new_vals[i] for i in range(len(new_vals))}
+                                row = {header[i] if i < len(header) else f"col_{i}": new_vals[i] for i in
+                                       range(len(new_vals))}
                                 row['ason'] = parse_date_any(ason_text)
                                 rows.append(row)
                         else:
@@ -493,14 +495,14 @@ def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = No
     try:
         soup = BeautifulSoup(fetch.body, "html.parser")
         tables = soup.find_all("table")
-        
+
         # If table_index is specified, extract only from that table
         if table_index is not None:
             try:
                 tables = [tables[table_index]]
             except IndexError:
                 return []
-        
+
         rows: List[Dict[str, Any]] = []
         for t in tables:
             # Check for thead with th elements (not wrapped in tr)
@@ -693,7 +695,7 @@ def extract_dlg_from_plain_text(
         # Check for FinAGG-specific format first
         if "FinAGG" in lsp_name or "Portfolio OS as on" in text:
             return parse_finagg_dlg_plain_text(text, lsp_name, scrape_ts)
-        
+
         # Check for Finnable-specific format (alternating portfolio number and amount lines)
         if "Finnable" in lsp_name or ("Portfolio Number" in text and "Disbursement" in text):
             return parse_finnable_dlg_plain_text(text, lsp_name, scrape_ts)
@@ -808,14 +810,14 @@ def extract_from_regex_patterns(
             if match:
                 date_str = match.group(1).strip()
                 as_on_date = parse_date_any(date_str)
-        
+
         # Try constant (backward compatibility)
         if not as_on_date and "constant" in as_on_config:
             try:
                 as_on_date = dateparser.parse(as_on_config["constant"])
             except Exception:
                 pass
-        
+
         # Fallback disabled - if no date found, leave as None
         # if not as_on_date and "fallback" in as_on_config:
         #     fallback_type = as_on_config["fallback"]
@@ -881,95 +883,99 @@ def parse_cred_style_dlg_plain_text(
     Returns rows with:
       LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
     """
+    deduped = []
+    error = ""
     scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
 
     # Normalize newlines and spaces
-    lines = [ln.strip() for ln in text.splitlines()]
-    # Keep empty lines as separators (we rely on headings)
-    # but remove repeated whitespace inside lines
-    lines = [re.sub(r"\s+", " ", ln) for ln in lines]
+    try:
+        lines = [ln.strip() for ln in text.splitlines()]
+        # Keep empty lines as separators (we rely on headings)
+        # but remove repeated whitespace inside lines
+        lines = [re.sub(r"\s+", " ", ln) for ln in lines]
 
-    rows: List[Dict[str, Any]] = []
+        rows: List[Dict[str, Any]] = []
 
-    current_lsp: Optional[str] = None
-    current_lender: Optional[str] = None
-    current_as_on: Optional[dt.datetime] = None
+        current_lsp: Optional[str] = None
+        current_lender: Optional[str] = None
+        current_as_on: Optional[dt.datetime] = None
 
-    # Patterns
-    p_app = re.compile(r"^Digital Lending App:\s*(.+)$", re.IGNORECASE)
-    p_as_on = re.compile(r"\bas on\b\s+(.+?)(?:\s*\(|\s*$)", re.IGNORECASE)
-    p_lender = re.compile(r"^(Lender\s+[A-Za-z0-9]+)\b.*?:\s*$", re.IGNORECASE)
-    p_portfolio = re.compile(
-        r"^Portfolio\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)?)\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*$",
-        re.IGNORECASE
-    )
+        # Patterns
+        p_app = re.compile(r"^Digital Lending App:\s*(.+)$", re.IGNORECASE)
+        p_as_on = re.compile(r"\bas on\b\s+(.+?)(?:\s*\(|\s*$)", re.IGNORECASE)
+        p_lender = re.compile(r"^(Lender\s+[A-Za-z0-9]+)\b.*?:\s*$", re.IGNORECASE)
+        p_portfolio = re.compile(
+            r"^Portfolio\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)?)\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*$",
+            re.IGNORECASE
+        )
 
-    def parse_date(s: str) -> Optional[dt.datetime]:
-        try:
-            return dateparser.parse(s, dayfirst=True, fuzzy=True)
-        except Exception:
-            return None
+        def parse_date(s: str) -> Optional[dt.datetime]:
+            try:
+                return dateparser.parse(s, dayfirst=True, fuzzy=True)
+            except Exception:
+                return None
 
-    for ln in lines:
-        if not ln:
-            continue
-
-        m_app = p_app.match(ln)
-        if m_app:
-            current_lsp = m_app.group(1).strip()
-            current_lender = None
-            current_as_on = None
-            continue
-
-        # capture as-on line anywhere under the app
-        if current_lsp:
-            m_ason = p_as_on.search(ln)
-            # only set if line actually contains "as on"
-            if m_ason and "as on" in ln.lower():
-                # Example trailing text: "November 30, 2025 (unaudited numbers):"
-                date_candidate = m_ason.group(1).strip()
-                # remove trailing qualifiers like "unaudited numbers" if present
-                date_candidate = re.sub(r"\bunaudited\b.*$", "", date_candidate, flags=re.IGNORECASE).strip(" :.-")
-                parsed = parse_date(date_candidate)
-                if parsed:
-                    current_as_on = parsed
-                # do not continue; line might also contain something else, but usually not
+        for ln in lines:
+            if not ln:
                 continue
 
-        m_lender = p_lender.match(ln)
-        if m_lender:
-            current_lender = m_lender.group(1).strip()
-            continue
+            m_app = p_app.match(ln)
+            if m_app:
+                current_lsp = m_app.group(1).strip()
+                current_lender = None
+                current_as_on = None
+                continue
 
-        m_port = p_portfolio.match(ln)
-        if m_port and current_lsp:
-            portfolio = m_port.group(1).strip()
-            amount = float(m_port.group(2))
+            # capture as-on line anywhere under the app
+            if current_lsp:
+                m_ason = p_as_on.search(ln)
+                # only set if line actually contains "as on"
+                if m_ason and "as on" in ln.lower():
+                    # Example trailing text: "November 30, 2025 (unaudited numbers):"
+                    date_candidate = m_ason.group(1).strip()
+                    # remove trailing qualifiers like "unaudited numbers" if present
+                    date_candidate = re.sub(r"\bunaudited\b.*$", "", date_candidate, flags=re.IGNORECASE).strip(" :.-")
+                    parsed = parse_date(date_candidate)
+                    if parsed:
+                        current_as_on = parsed
+                    # do not continue; line might also contain something else, but usually not
+                    continue
 
-            rows.append({
-                "LSP Name": current_lsp,
-                "Lender": current_lender,  # allowed to be None if not found
-                "Portfolio": portfolio,
-                "Amount": amount,
-                "AsOnTimestamp": current_as_on,
-                "ScrapeTimestamp": scrape_ts
-            })
+            m_lender = p_lender.match(ln)
+            if m_lender:
+                current_lender = m_lender.group(1).strip()
+                continue
 
-    # de-dupe (safe in case the text repeats)
-    seen = set()
-    deduped = []
-    for r in rows:
-        k = (
-            r["LSP Name"],
-            r["Lender"],
-            r["Portfolio"],
-            r["Amount"],
-            r["AsOnTimestamp"].isoformat() if r["AsOnTimestamp"] else None
-        )
-        if k in seen:
-            continue
-        seen.add(k)
-        deduped.append(r)
+            m_port = p_portfolio.match(ln)
+            if m_port and current_lsp:
+                portfolio = m_port.group(1).strip()
+                amount = float(m_port.group(2))
+
+                rows.append({
+                    "LSP Name": current_lsp,
+                    "Lender": current_lender,  # allowed to be None if not found
+                    "Portfolio": portfolio,
+                    "Amount": amount,
+                    "AsOnTimestamp": current_as_on,
+                    "ScrapeTimestamp": scrape_ts
+                })
+
+        # de-dupe (safe in case the text repeats)
+        seen = set()
+        for r in rows:
+            k = (
+                r["LSP Name"],
+                r["Lender"],
+                r["Portfolio"],
+                r["Amount"],
+                r["AsOnTimestamp"].isoformat() if r["AsOnTimestamp"] else None
+            )
+            if k in seen:
+                continue
+            seen.add(k)
+            deduped.append(r)
+    except RuntimeError as ex:
+        raise ex
 
     return deduped
 
@@ -994,7 +1000,7 @@ def parse_finnable_dlg_plain_text(
     Last updated as of November 2025
     """
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    
+
     # Find the date
     as_on_date = None
     date_match = re.search(r"Last updated as of ([A-Za-z]+ \d{4})", text, re.IGNORECASE)
@@ -1005,27 +1011,27 @@ def parse_finnable_dlg_plain_text(
             # Month YYYY format - use last day of month
             as_on_date = parsed.replace(day=1) + dt.timedelta(days=32)
             as_on_date = as_on_date.replace(day=1) - dt.timedelta(days=1)
-    
+
     rows = []
     portfolio_started = False
     i = 0
-    
+
     while i < len(lines):
         line = lines[i]
-        
+
         if "Portfolio Number" in line:
             portfolio_started = True
             i += 1
             continue
-        
+
         if not portfolio_started:
             i += 1
             continue
-        
+
         # Stop at Total or Last updated
         if line.lower().startswith("total") or "last updated" in line.lower():
             break
-        
+
         # Check if line is a portfolio number (single digit)
         if re.match(r'^\d+$', line):
             portfolio_num = line
@@ -1049,9 +1055,9 @@ def parse_finnable_dlg_plain_text(
                         pass
                     i += 2  # Skip both lines
                     continue
-        
+
         i += 1
-    
+
     return rows
 
 
@@ -1077,41 +1083,41 @@ def parse_finagg_dlg_plain_text(
     
     Key insight: Standalone amounts appear BEFORE the portfolio line they belong to!
     """
-    
+
     rows: List[Dict[str, Any]] = []
-    
+
     # Extract date first
     as_on_date = None
     date_match = re.search(r"Portfolio OS as on ([0-9]{1,2}-[0-9]{1,2}-[0-9]{4})", text, re.IGNORECASE)
     if date_match:
         date_str = date_match.group(1)
         as_on_date = parse_date_any(date_str)
-    
+
     # Split into lines
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    
+
     pending_amount = None  # Amount from previous line to use with next portfolio
-    
+
     for i, line in enumerate(lines):
         # Check if this is a standalone amount line (to be used with NEXT portfolio)
-        if re.match(r"^[0-9,\s]+$", line) and 'Total' not in lines[i-1] if i > 0 else True:
+        if re.match(r"^[0-9,\s]+$", line) and 'Total' not in lines[i - 1] if i > 0 else True:
             clean_amount = line.replace(',', '').replace(' ', '')
             if len(clean_amount) >= 6:  # Reasonable amount size
                 pending_amount = clean_amount
                 continue
-        
+
         # Match lines starting with "Portfolio" - handle both "Portfolio9" and "Portfolio 9"
         match = re.match(r"Portfolio\s*([0-9l]+)(?:\s+([0-9,\s]+))?\s*(?:(Yes|No))?\s*$", line, re.IGNORECASE)
-        
+
         if match:
             portfolio_num = match.group(1)
             # Handle OCR artifacts
             if portfolio_num.lower() == 'l':
                 portfolio_num = '1'
-            
+
             amount_str = match.group(2)  # Amount on same line (if present)
             fldg = match.group(3)  # FLDG status
-            
+
             # Determine the amount to use
             if amount_str:
                 # Amount is on the same line
@@ -1124,16 +1130,16 @@ def parse_finagg_dlg_plain_text(
             else:
                 # No amount available, skip this portfolio
                 continue
-            
+
             try:
                 # Clean and parse amount
                 clean_amount = final_amount_str.replace(',', '').replace(' ', '')
                 amount = float(clean_amount)
-                
+
                 # Skip the Total row
                 if 'total' in portfolio_num.lower() or amount > 7000000000:  # Total is usually very large
                     continue
-                
+
                 rows.append({
                     "LSP Name": lsp_name,
                     "Lender": "FinAGG Services Private Limited",
@@ -1144,7 +1150,7 @@ def parse_finagg_dlg_plain_text(
                 })
             except ValueError:
                 pass  # Skip if amount can't be parsed
-    
+
     return rows
 
 
@@ -1174,12 +1180,12 @@ def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
         """Normalize text for field matching by replacing special chars that may have encoding issues."""
         # Replace rupee symbol and other currency symbols that might become ? in PostgreSQL
         return text.replace('₹', '?').replace('₨', '?').replace('₹', '?')
-    
+
     # First try exact match
     for k in keys:
         if k in rr and rr[k] is not None and str(rr[k]).strip():
             return str(rr[k]).strip()
-    
+
     # Then try normalized matching (handles encoding issues like ₹ -> ?)
     for col, v in rr.items():
         normalized_col = normalize_for_matching(str(col).lower())
@@ -1188,7 +1194,7 @@ def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
             if normalized_key in normalized_col:
                 if v is not None and str(v).strip():
                     return str(v).strip()
-    
+
     # Finally try original substring matching as fallback
     for col, v in rr.items():
         lcol = str(col).lower()
@@ -1202,14 +1208,14 @@ def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
 def extract_by_regex(text: str, pattern: str, group: int = 1) -> Optional[str]:
     if not text or not pattern:
         return None
-    
+
     # Only normalize text for currency symbol encoding issues (₹ -> ?)
     # Don't touch the pattern - let it be used as-is
     def normalize_currency_in_text(s: str) -> str:
         return s.replace('₹', '?').replace('₨', '?')
-    
+
     normalized_text = normalize_currency_in_text(text)
-    
+
     m = re.search(pattern, normalized_text, flags=re.IGNORECASE | re.DOTALL)
     if not m:
         return None
@@ -1311,7 +1317,7 @@ def normalize_rows(
         # Handle constant value
         if "constant" in spec and spec["constant"] is not None:
             return str(spec["constant"]).strip()
-        
+
         # Handle regex-based column matching (when regex is meant to find the COLUMN, not extract from value)
         # This is the case when we have {"regex": "..."} without "keys"
         if "regex" in spec and "keys" not in spec and fname != "as_on":
@@ -1322,17 +1328,17 @@ def normalize_rows(
                     if col_value is not None and str(col_value).strip():
                         return str(col_value).strip()
             return None
-        
+
         # Handle dynamic date extraction for as_on field
         # Only process if spec has actual configuration (not just an empty dict)
         if fname == "as_on" and isinstance(spec, dict) and spec:
             extracted_date = None
-            
+
             # Try to extract date from column names (not values)
             if "extract_regex" in spec:
                 extract_from = spec.get("extract_from", "amount_column")
                 date_format = spec.get("date_format", None)
-                
+
                 # Determine which column name to extract from
                 source_column_name = None
                 if extract_from == "amount_column":
@@ -1358,7 +1364,7 @@ def normalize_rows(
                                         break
                                 if source_column_name:
                                     break
-                
+
                 elif extract_from == "portfolio_column":
                     # Get the portfolio field spec to find the column name
                     portfolio_spec = field_map.get("portfolio")
@@ -1382,7 +1388,7 @@ def normalize_rows(
                                         break
                                 if source_column_name:
                                     break
-                
+
                 # Try to extract date from the column name using regex
                 if source_column_name:
                     extracted = extract_by_regex(source_column_name, spec["extract_regex"], group=1)
@@ -1397,17 +1403,17 @@ def normalize_rows(
                             parsed_date = parse_date_any(extracted)
                             if parsed_date:
                                 extracted_date = parsed_date.strftime("%Y-%m-%d")
-            
+
             # Handle extract_from_button for SaveIN (button text contains date)
             if not extracted_date and spec.get("extract_from_button"):
                 # This would be handled by the playwright pre-click logic
                 # The button text might be in page_vals or we fall back
                 pass
-            
+
             # If extraction succeeded, return it
             if extracted_date:
                 return extracted_date
-            
+
             # If no explicit extraction method worked, try standard field extraction first
             # (this picks up dates from PDF 'ason' field, HTML date columns, etc.)
             if not extracted_date:
@@ -1415,7 +1421,7 @@ def normalize_rows(
                 standard_val = pick_by_keys(raw_row, keys)
                 if standard_val:
                     return standard_val
-            
+
             # Fallback disabled - if no date found, return None instead of calculating fallback
             # This ensures data accuracy - only actual dates from pages are used
             # if "fallback" in spec:
@@ -1426,10 +1432,10 @@ def normalize_rows(
             #     elif fallback_type == "previous_quarter_end":
             #         fallback_date = calculate_previous_quarter_end(scrape_ts)
             #         return fallback_date.strftime("%Y-%m-%d")
-            
+
             # If we processed as_on but found nothing, return None (don't fall through to standard extraction)
             return None
-        
+
         # Standard field extraction
         keys = spec.get("keys") or defaults[fname]
         val = pick_by_keys(raw_row, keys)

@@ -42,7 +42,7 @@ class DlgCrawlerService:
         for source in sources:
             scrape_started_at = dt.datetime.now(tz=dt.timezone.utc)
             try:
-                status, *_rest, normalized_rows = self.scrape_one(source)
+                status, fetch_mode, content_type, normalized_rows, error = self.scrape_one(source)
                 self.persist_rows(status, normalized_rows, source, scrape_started_at)
                 user_id = self.user_claims.get('username') if self.user_claims else "system"
                 self.auditlog_service.record(
@@ -51,7 +51,7 @@ class DlgCrawlerService:
                         action_taken=AuditAction.CRAWL,
                         auto_manual="auto",
                         user_id=user_id,
-                        payload={"status": status.value, "details": None, "ts": scrape_started_at.isoformat()}
+                        payload={"status": status.value, "details": error, "ts": scrape_started_at.isoformat()}
                     )
                 )
                 self.logger.info(f"[OK] {source.name} -> {status.value}")
@@ -69,7 +69,8 @@ class DlgCrawlerService:
                 )
                 self.logger.error(f"[ERR logging Audit Log] {source.name} -> Error ({str(exc)[:120]})")
 
-    def scrape_one(self, source: LspMaster) -> Tuple[CrawlStatus, Optional[str], Optional[str], List[Dict[str, Any]], str]:
+    def scrape_one(self, source: LspMaster) -> Tuple[
+        CrawlStatus, Optional[str], Optional[str], List[Dict[str, Any]], str]:
         scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
         rules = load_rules(source.rules_json) if source.rules_json else {}
         pre_click_js = rules.get("pre_click_js")
@@ -77,13 +78,13 @@ class DlgCrawlerService:
         simple_cfg = ocr_rules.get("simple") if isinstance(ocr_rules.get("simple"), dict) else ocr_rules
 
         if not source.dlg_url:
-            return CrawlStatus.MISSING, None, None , [], "Missing DLG URL"
+            return CrawlStatus.MISSING, None, None, [], "Missing DLG URL"
         try:
-            fetch = self._execute_fetch(source, pre_click_js) #T&C
-        
+            fetch = self._execute_fetch(source, pre_click_js)  # T&C
+
         except Exception as exc:
             return CrawlStatus.ERROR, None, None, [], str(exc)
-        
+
         # For OCR with HTML→PDF rendering, extract page-level values (like dates) from HTML before rendering
         html_page_values = {}
         if source.parse_hint == "ocr_simple" and not looks_like_pdf(fetch):
@@ -93,7 +94,7 @@ class DlgCrawlerService:
                 from utils.utils import page_level_values
                 try:
                     html_page_values = page_level_values(fetch, rules)
-                    
+
                     fetch = render_url_to_pdf(
                         url=source.dlg_url,
                         timeout_ms=self._coerce_int(simple_cfg.get("render_timeout_ms")) or 120_000,
@@ -125,7 +126,12 @@ class DlgCrawlerService:
             scrape_ts=scrape_ts,
             rules_json=source.rules_json,
         )
-        final_error = f"Parse error: {parse_error}, Error: {error}"
+        final_error = ""
+        if crawl_status in {CrawlStatus.MISSING, CrawlStatus.ERROR, CrawlStatus.NO_DATA}:
+            final_error = f"error during data extraction/normalization: {error}"
+        if parse_error:
+            final_error = final_error + f"error during data fetch/parsing: {parse_error}"
+
         return crawl_status, fetch.fetch_mode_used, fetch.content_type, normalized, final_error
 
     # ------------------------------------------------------------------
@@ -204,32 +210,32 @@ class DlgCrawlerService:
                     rules: Dict[str, Any],
                     scrape_ts: dt.datetime,
                     html_page_values: Optional[Dict[str, Any]] = None,
-                    ) -> List[Dict[str, Any], str]:
+                    ) -> Tuple[List[Dict[str, Any]], str]:
         parse_hint = (source.parse_hint or "auto").lower()
         try:
             if parse_hint == "plain_text":
-                return extract_dlg_from_plain_text(fetch.body, lsp_name=source.name, scrape_ts=scrape_ts,
-                                                rules_json=source.rules_json)
+                return extract_dlg_from_plain_text(fetch.body, lsp_name=source.name, scrape_ts=scrape_ts, rules_json=source.rules_json), ""
             if parse_hint == "ocr_simple":
-                return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules, html_page_values or {})
+                return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules, html_page_values or {}), ""
             if parse_hint == "pdf_table" or looks_like_pdf(fetch):
-                return extract_from_pdf(fetch)
+                return extract_from_pdf(fetch), ""
             if parse_hint == "html_table":
-                return extract_from_html_tables(fetch, table_index=rules.get("table_index"))
+                return extract_from_html_tables(fetch, table_index=rules.get("table_index")), "None"
 
             # auto
             if looks_like_pdf(fetch):
-                return extract_from_pdf(fetch)
+                return extract_from_pdf(fetch), ""
 
             rows = extract_from_html_tables(fetch, table_index=rules.get("table_index"))
             if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
                 fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"))
                 rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"))
-            return rows, None
+            return rows, ""
         except Exception as exc:
             self.logger.error(f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}")
             error = f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}"
             return [], error
+
     # ------------------------------------------------------------------
     # Playwright + OCR helpers (mostly lifted from the legacy script)
     # ------------------------------------------------------------------
@@ -295,7 +301,7 @@ class DlgCrawlerService:
             field_map = rules.get("field_map") or {}
             as_on_cfg = field_map.get("as_on")
             as_on_dt = None
-            
+
             # Try HTML page-level values first (extracted before render_pdf)
             if html_page_values.get("as_on"):
                 as_on_dt = parse_date_any(html_page_values["as_on"])
