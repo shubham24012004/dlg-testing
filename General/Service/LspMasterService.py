@@ -35,7 +35,7 @@ class LSPMasterService:
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=result.id,
+                    lsp_id=result["id"],
                     action_taken=AuditAction.INSERT_LSP,
                     auto_manual="auto",
                     user_id=user_id,
