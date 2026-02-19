@@ -133,6 +133,7 @@ class LspMasterManager:
         """List LSP master records.
 
         Args:
+            :param lsp_type:
             :param lsp_id: lsp id to search by
             :param lsp_name: search string for name of lsp
             :param active_only: If True, only return active LSPs
@@ -159,10 +160,7 @@ class LspMasterManager:
                     or_(LspMaster.name.ilike(search_name), LspMaster.brand_name.ilike(search_name))
                 )
             if lsp_type:
-                search_type = f"%{lsp_type}%"
-                query = query.filter(
-                    LspMaster.lsp_type.ilike(search_type)
-                )
+                query = query.filter(LspMaster.lsp_type == lsp_type)
             # capture total count before pagination
             total_count = query.count()
 
