@@ -43,75 +43,79 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
                           pre_click_js: str | None = None) -> FetchResult:
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError("Playwright not installed/available. Install playwright to scrape JS-rendered pages.")
-    header_overrides = {k: v for k, v in BROWSER_HEADERS.items() if k.lower() != "user-agent"}
-    with sync_playwright() as context_manager:
-        browser = context_manager.chromium.launch(headless=True,
-                                                  args=["--disable-blink-features=AutomationControlled"])
-        context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=header_overrides)
-        page = context.new_page()
-        page.goto(url, wait_until="networkidle", timeout=timeout_ms)
-        
-        final_url = url
-        if pre_click_js:
-            # Execute JavaScript - it may return a URL to navigate to
-            result = page.evaluate(pre_click_js)
-            
-            # If JavaScript returns a URL string, handle it appropriately
-            if result and isinstance(result, str) and (result.startswith('http://') or result.startswith('https://')):
-                final_url = result
-                
-                # If it's a PDF, close browser and download directly
-                if final_url.lower().endswith('.pdf'):
-                    context.close()
-                    browser.close()
-                    headers = {**BROWSER_HEADERS, "User-Agent": BROWSER_USER_AGENT}
-                    response = requests.get(final_url, headers=headers, timeout=40)
-                    return FetchResult(
-                        url=final_url,
-                        status_code=response.status_code,
-                        content_type="application/pdf",
-                        body=response.content,
-                        fetch_mode_used="playwright+requests",
-                    )
+    try:
+        header_overrides = {k: v for k, v in BROWSER_HEADERS.items() if k.lower() != "user-agent"}
+        with sync_playwright() as context_manager:
+            browser = context_manager.chromium.launch(headless=True,
+                                                      args=["--disable-blink-features=AutomationControlled"])
+            context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=header_overrides)
+            page = context.new_page()
+            page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+
+            final_url = url
+            if pre_click_js:
+                # Execute JavaScript - it may return a URL to navigate to
+                result = page.evaluate(pre_click_js)
+
+                # If JavaScript returns a URL string, handle it appropriately
+                if result and isinstance(result, str) and (
+                        result.startswith('http://') or result.startswith('https://')):
+                    final_url = result
+
+                    # If it's a PDF, close browser and download directly
+                    if final_url.lower().endswith('.pdf'):
+                        context.close()
+                        browser.close()
+                        headers = {**BROWSER_HEADERS, "User-Agent": BROWSER_USER_AGENT}
+                        response = requests.get(final_url, headers=headers, timeout=40)
+                        return FetchResult(
+                            url=final_url,
+                            status_code=response.status_code,
+                            content_type="application/pdf",
+                            body=response.content,
+                            fetch_mode_used="playwright+requests",
+                        )
+                    else:
+                        # Navigate to the returned URL (non-PDF)
+                        page.goto(final_url, wait_until="networkidle", timeout=timeout_ms)
                 else:
-                    # Navigate to the returned URL (non-PDF)
-                    page.goto(final_url, wait_until="networkidle", timeout=timeout_ms)
-            else:
-                # JavaScript didn't return a URL, just wait for any navigation it triggered
-                try:
-                    page.wait_for_load_state("networkidle", timeout=5000)
-                except:
-                    pass
-            
-            page.wait_for_timeout(2000)
-            final_url = page.url
-        
-        # Check if we're on a PDF page
-        if final_url.lower().endswith('.pdf'):
-            # We're on a PDF - download it using requests
+                    # JavaScript didn't return a URL, just wait for any navigation it triggered
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=5000)
+                    except:
+                        pass
+
+                page.wait_for_timeout(2000)
+                final_url = page.url
+
+            # Check if we're on a PDF page
+            if final_url.lower().endswith('.pdf'):
+                # We're on a PDF - download it using requests
+                context.close()
+                browser.close()
+                headers = {**BROWSER_HEADERS, "User-Agent": BROWSER_USER_AGENT}
+                response = requests.get(final_url, headers=headers, timeout=40)
+                return FetchResult(
+                    url=final_url,
+                    status_code=response.status_code,
+                    content_type="application/pdf",
+                    body=response.content,
+                    fetch_mode_used="playwright+requests",
+                )
+
+            # Otherwise return HTML content
+            html = page.content().encode("utf-8", errors="ignore")
             context.close()
             browser.close()
-            headers = {**BROWSER_HEADERS, "User-Agent": BROWSER_USER_AGENT}
-            response = requests.get(final_url, headers=headers, timeout=40)
             return FetchResult(
                 url=final_url,
-                status_code=response.status_code,
-                content_type="application/pdf",
-                body=response.content,
-                fetch_mode_used="playwright+requests",
+                status_code=200,
+                content_type="text/html; charset=utf-8",
+                body=html,
+                fetch_mode_used="playwright",
             )
-        
-        # Otherwise return HTML content
-        html = page.content().encode("utf-8", errors="ignore")
-        context.close()
-        browser.close()
-        return FetchResult(
-            url=final_url,
-            status_code=200,
-            content_type="text/html; charset=utf-8",
-            body=html,
-            fetch_mode_used="playwright",
-        )
+    except Exception as ex:
+        raise RuntimeError(f"Failed to fetch page with Playwright: {ex}")
 
 
 def _clean_html_to_text(html: bytes) -> str:
@@ -132,41 +136,44 @@ def parse_bool(x: Any) -> bool:
 
 # noinspection PyBroadException
 def parse_date_any(s: Any) -> Optional[dt.datetime]:
-    if s is None:
-        return None
-    txt = str(s).strip()
-    if not txt:
-        return None
-    
-    # Remove ordinal suffixes (1st, 2nd, 3rd, 4th, etc.) to help dateparser
-    txt_cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', txt)
-    
-    # Detect Month-YYYY format (e.g., "Jan-2026") before preprocessing
-    month_yyyy_match = re.search(r"([A-Za-z]{3,9})-(\d{4})\b", txt_cleaned)
-    
-    # Handle Month-YYYY format (e.g., "Jan-2026" -> "Jan 2026")
-    txt_cleaned = re.sub(r"([A-Za-z]{3,9})-(\d{4})\b", r"\1 \2", txt_cleaned)
-    
-    # Detect Month'YY format before preprocessing
-    # Includes regular apostrophe ('), left quote (\u2018), and right quote (\u2019)
-    month_yy_match = re.search(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", txt_cleaned)
-    
-    # Handle Month'YY format (e.g., "Dec'25" -> "Dec 2025")
-    txt_cleaned = re.sub(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", r"\1 20\2", txt_cleaned)
-    
-    # Handle DD-Month-YY format (e.g., "31-January-26" -> "31-January-2026")
-    txt_cleaned = re.sub(r"(\d{1,2})-([A-Za-z]{3,9})-(\d{2})\b", r"\1-\2-20\3", txt_cleaned)
-    
     try:
-        parsed = dateparser.parse(txt_cleaned, dayfirst=True, fuzzy=True)
-        
-        # If we parsed a Month'YY or Month-YYYY format, set to last day of that month
-        # (Financial disclosures with "as on Dec'25" or "as on Jan-2026" mean end of month)
-        if parsed and (month_yy_match or month_yyyy_match):
-            last_day = calendar.monthrange(parsed.year, parsed.month)[1]
-            parsed = parsed.replace(day=last_day)
-        
-        return parsed
+        if s is None:
+            return None
+        txt = str(s).strip()
+        if not txt:
+            return None
+
+        # Remove ordinal suffixes (1st, 2nd, 3rd, 4th, etc.) to help dateparser
+        txt_cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', txt)
+
+        # Detect Month-YYYY format (e.g., "Jan-2026") before preprocessing
+        month_yyyy_match = re.search(r"([A-Za-z]{3,9})-(\d{4})\b", txt_cleaned)
+
+        # Handle Month-YYYY format (e.g., "Jan-2026" -> "Jan 2026")
+        txt_cleaned = re.sub(r"([A-Za-z]{3,9})-(\d{4})\b", r"\1 \2", txt_cleaned)
+
+        # Detect Month'YY format before preprocessing
+        # Includes regular apostrophe ('), left quote (\u2018), and right quote (\u2019)
+        month_yy_match = re.search(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", txt_cleaned)
+
+        # Handle Month'YY format (e.g., "Dec'25" -> "Dec 2025")
+        txt_cleaned = re.sub(r"([A-Za-z]{3,9})[''\u2018\u2019](\d{2})\b", r"\1 20\2", txt_cleaned)
+
+        # Handle DD-Month-YY format (e.g., "31-January-26" -> "31-January-2026")
+        txt_cleaned = re.sub(r"(\d{1,2})-([A-Za-z]{3,9})-(\d{2})\b", r"\1-\2-20\3", txt_cleaned)
+
+        try:
+            parsed = dateparser.parse(txt_cleaned, dayfirst=True, fuzzy=True)
+
+            # If we parsed a Month'YY or Month-YYYY format, set to last day of that month
+            # (Financial disclosures with "as on Dec'25" or "as on Jan-2026" mean end of month)
+            if parsed and (month_yy_match or month_yyyy_match):
+                last_day = calendar.monthrange(parsed.year, parsed.month)[1]
+                parsed = parsed.replace(day=last_day)
+
+            return parsed
+        except Exception:
+            return None
     except Exception:
         return None
 
@@ -175,7 +182,7 @@ def calculate_previous_month_end(reference_date: Optional[dt.datetime] = None) -
     """Calculate the last day of the previous month relative to reference_date."""
     if reference_date is None:
         reference_date = dt.datetime.now()
-    
+
     # First day of current month
     first_of_month = reference_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     # Last day of previous month
@@ -187,7 +194,7 @@ def calculate_previous_quarter_end(reference_date: Optional[dt.datetime] = None)
     """Calculate the last day of the previous quarter (Mar 31, Jun 30, Sep 30, Dec 31)."""
     if reference_date is None:
         reference_date = dt.datetime.now()
-    
+
     # Determine current quarter
     current_month = reference_date.month
     if current_month <= 3:
@@ -216,9 +223,9 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
     """
     if not date_string:
         return None
-    
+
     date_string = date_string.strip()
-    
+
     # Try format-specific parsing
     if format_hint == "DD.MM.YYYY":
         # Match DD.MM.YYYY
@@ -229,7 +236,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
                 return dt.datetime(int(year), int(month), int(day))
             except ValueError:
                 pass
-    
+
     elif format_hint == "DD-MM-YYYY":
         # Match DD-MM-YYYY
         match = re.match(r'(\d{1,2})-(\d{1,2})-(\d{4})', date_string)
@@ -239,7 +246,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
                 return dt.datetime(int(year), int(month), int(day))
             except ValueError:
                 pass
-    
+
     elif format_hint in ["DD Month YYYY", "DD Month YYYY with ordinal"]:
         # Remove ordinal suffixes (st, nd, rd, th)
         cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)', r'\1', date_string)
@@ -248,7 +255,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
             return dateparser.parse(cleaned, dayfirst=True)
         except Exception:
             pass
-    
+
     elif format_hint == "Mon YYYY":
         # Parse month name and year, return last day of that month
         try:
@@ -260,7 +267,7 @@ def parse_date_with_format(date_string: str, format_hint: str) -> Optional[dt.da
                 return last_day.replace(hour=0, minute=0, second=0, microsecond=0)
         except Exception:
             pass
-    
+
     # Fallback to general parsing
     return parse_date_any(date_string)
 
@@ -307,125 +314,130 @@ def looks_like_pdf(fetch: FetchResult) -> bool:
 
 
 def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
-    date_patterns = [
-        # as of 1st Jan, 2025 (ordinal + month abbreviation with comma)
-        r"as\s+of\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+,?\s+\d{4})",
-        
-        # As on 31st October 25 (ordinal + 2-digit year)
-        r"As\s+on\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{2,4})",
-        
-        # As on November 30, 2025
-        r"As\s+on\s+([A-Za-z]+ \d{1,2}, \d{4})",
+    try:
+        date_patterns = [
+            # as of 1st Jan, 2025 (ordinal + month abbreviation with comma)
+            r"as\s+of\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+,?\s+\d{4})",
 
-        # As on 30 November 2025
-        r"As\s+on\s+(\d{1,2} [A-Za-z]+ \d{4})",
+            # As on 31st October 25 (ordinal + 2-digit year)
+            r"As\s+on\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{2,4})",
 
-        # As on 30.11.2025
-        r"As\s+on\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4})",
-        
-        # as on Dec'25 or as on Dec 25 (Month'YY format with "as on" prefix)
-        r"as\s+on\s+([A-Za-z]{3,9}['\u2018\u2019]?\s*\d{2})",
-        
-        # Dec'25 or (Dec'25) - Month'YY format without prefix (matches Unicode quotes)
-        r"([A-Za-z]{3,9}['\u2018\u2019]\d{2})\b",
-    ]
+            # As on November 30, 2025
+            r"As\s+on\s+([A-Za-z]+ \d{1,2}, \d{4})",
 
-    rows: List[Dict[str, Any]] = []
-    last_valid_header = None  # Track header across pages for multi-page tables
-    ason_text_global = ""  # Track date across all pages (usually on page 1 only)
-    
-    with pdfplumber.open(io.BytesIO(fetch.body)) as pdf:
-        for page in pdf.pages:
-            ason_text = ""
-            text = page.extract_text() or ""
-            
-            for pattern in date_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    ason_text = match.group(1)
-                    # Save the first found date to use across all pages
-                    if not ason_text_global:
-                        ason_text_global = ason_text
-                    break
-            
-            # Use the globally found date if current page doesn't have one
-            if not ason_text and ason_text_global:
-                ason_text = ason_text_global
+            # As on 30 November 2025
+            r"As\s+on\s+(\d{1,2} [A-Za-z]+ \d{4})",
 
-            tables = page.extract_tables() or []
-            if not tables:
-                rows.extend(_extract_portfolio_rows_from_pdf_text(text, ason_text))
-                continue
-            for tbl in tables:
-                if not tbl or len(tbl) < 2:
+            # As on 30.11.2025
+            r"As\s+on\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4})",
+
+            # as on Dec'25 or as on Dec 25 (Month'YY format with "as on" prefix)
+            r"as\s+on\s+([A-Za-z]{3,9}['\u2018\u2019]?\s*\d{2})",
+
+            # Dec'25 or (Dec'25) - Month'YY format without prefix (matches Unicode quotes)
+            r"([A-Za-z]{3,9}['\u2018\u2019]\d{2})\b",
+        ]
+
+        rows: List[Dict[str, Any]] = []
+        last_valid_header = None  # Track header across pages for multi-page tables
+        ason_text_global = ""  # Track date across all pages (usually on page 1 only)
+
+        with pdfplumber.open(io.BytesIO(fetch.body)) as pdf:
+            for page in pdf.pages:
+                ason_text = ""
+                text = page.extract_text() or ""
+
+                for pattern in date_patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        ason_text = match.group(1)
+                        # Save the first found date to use across all pages
+                        if not ason_text_global:
+                            ason_text_global = ason_text
+                        break
+
+                # Use the globally found date if current page doesn't have one
+                if not ason_text and ason_text_global:
+                    ason_text = ason_text_global
+
+                tables = page.extract_tables() or []
+                if not tables:
+                    rows.extend(_extract_portfolio_rows_from_pdf_text(text, ason_text))
                     continue
-                    
-                # Check if first row looks like a header or data
-                first_row = [str(x).strip() if x else "" for x in tbl[0]]
-                is_continuation_page = False
-                
-                # Detect continuation pages: first row contains "Portfolio" pattern (data, not header)
-                if first_row and len(first_row) == 1:
-                    first_cell = first_row[0]
-                    # If it looks like "Portfolio X.Y" (optionally preceded by numbers/newlines), it's data
-                    # Examples: "Portfolio 6.2 -", "23\nPortfolio 8.10", "Portfolio 1.1\n-"
-                    if re.search(r'Portfolio\s+\d+\.\d+', first_cell, re.IGNORECASE):
-                        is_continuation_page = True
-                
-                if is_continuation_page and last_valid_header:
-                    # Use header from previous page and process ALL rows as data
-                    header = last_valid_header
-                    data_rows = tbl  # Include first row as data
-                else:
-                    # Normal table with header in first row
-                    header = first_row
-                    
-                    # If headers have duplicates or empties, use col_0, col_1, col_2 instead
-                    if len(header) != len(set(h for h in header if h)) or any(not h for h in header):
-                        header = [f"col_{i}" for i in range(len(header))]
-                    else:
-                        # Save this as a valid header for potential continuation pages
-                        last_valid_header = header
-                    
-                    data_rows = tbl[1:]  # Skip header row
-
-                for r in data_rows:
-                    vals = [str(x).strip() if x else "" for x in r]
-                    if not any(v.strip() for v in vals):
+                for tbl in tables:
+                    if not tbl or len(tbl) < 2:
                         continue
-                    
-                    # Check if any cell contains newlines with multiple data entries
-                    # If so, split into multiple rows (e.g., Bhanix PDF with merged data)
-                    split_rows = []
-                    has_multiline = False
-                    multiline_col_idx = -1
-                    
-                    for idx, val in enumerate(vals):
-                        if '\n' in val and len([line for line in val.split('\n') if line.strip()]) > 1:
-                            # Found a cell with multiple non-empty lines
-                            has_multiline = True
-                            multiline_col_idx = idx
-                            break
-                    
-                    if has_multiline and multiline_col_idx >= 0:
-                        # Split the multiline cell into separate rows
-                        lines = [line.strip() for line in vals[multiline_col_idx].split('\n') if line.strip()]
-                        # Filter out "Total" lines as they are summary rows
-                        lines = [line for line in lines if not re.match(r'^Total\s*\d*\.?\d*$', line, re.IGNORECASE)]
-                        
-                        for line in lines:
-                            # Create a new row for each line
-                            new_vals = vals.copy()
-                            new_vals[multiline_col_idx] = line
-                            row = {header[i] if i < len(header) else f"col_{i}": new_vals[i] for i in range(len(new_vals))}
+
+                    # Check if first row looks like a header or data
+                    first_row = [str(x).strip() if x else "" for x in tbl[0]]
+                    is_continuation_page = False
+
+                    # Detect continuation pages: first row contains "Portfolio" pattern (data, not header)
+                    if first_row and len(first_row) == 1:
+                        first_cell = first_row[0]
+                        # If it looks like "Portfolio X.Y" (optionally preceded by numbers/newlines), it's data
+                        # Examples: "Portfolio 6.2 -", "23\nPortfolio 8.10", "Portfolio 1.1\n-"
+                        if re.search(r'Portfolio\s+\d+\.\d+', first_cell, re.IGNORECASE):
+                            is_continuation_page = True
+
+                    if is_continuation_page and last_valid_header:
+                        # Use header from previous page and process ALL rows as data
+                        header = last_valid_header
+                        data_rows = tbl  # Include first row as data
+                    else:
+                        # Normal table with header in first row
+                        header = first_row
+
+                        # If headers have duplicates or empties, use col_0, col_1, col_2 instead
+                        if len(header) != len(set(h for h in header if h)) or any(not h for h in header):
+                            header = [f"col_{i}" for i in range(len(header))]
+                        else:
+                            # Save this as a valid header for potential continuation pages
+                            last_valid_header = header
+
+                        data_rows = tbl[1:]  # Skip header row
+
+                    for r in data_rows:
+                        vals = [str(x).strip() if x else "" for x in r]
+                        if not any(v.strip() for v in vals):
+                            continue
+
+                        # Check if any cell contains newlines with multiple data entries
+                        # If so, split into multiple rows (e.g., Bhanix PDF with merged data)
+                        split_rows = []
+                        has_multiline = False
+                        multiline_col_idx = -1
+
+                        for idx, val in enumerate(vals):
+                            if '\n' in val and len([line for line in val.split('\n') if line.strip()]) > 1:
+                                # Found a cell with multiple non-empty lines
+                                has_multiline = True
+                                multiline_col_idx = idx
+                                break
+
+                        if has_multiline and multiline_col_idx >= 0:
+                            # Split the multiline cell into separate rows
+                            lines = [line.strip() for line in vals[multiline_col_idx].split('\n') if line.strip()]
+                            # Filter out "Total" lines as they are summary rows
+                            lines = [line for line in lines if
+                                     not re.match(r'^Total\s*\d*\.?\d*$', line, re.IGNORECASE)]
+
+                            for line in lines:
+                                # Create a new row for each line
+                                new_vals = vals.copy()
+                                new_vals[multiline_col_idx] = line
+                                row = {header[i] if i < len(header) else f"col_{i}": new_vals[i] for i in
+                                       range(len(new_vals))}
+                                row['ason'] = parse_date_any(ason_text)
+                                rows.append(row)
+                        else:
+                            # Normal single-line row
+                            row = {header[i] if i < len(header) else f"col_{i}": vals[i] for i in range(len(vals))}
                             row['ason'] = parse_date_any(ason_text)
                             rows.append(row)
-                    else:
-                        # Normal single-line row
-                        row = {header[i] if i < len(header) else f"col_{i}": vals[i] for i in range(len(vals))}
-                        row['ason'] = parse_date_any(ason_text)
-                        rows.append(row)
-    return rows
+        return rows
+    except Exception as exc:
+        raise RuntimeError(f"Failed to extract data from PDF: {exc}")
 
 
 def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dict[str, Any]]:
@@ -480,133 +492,136 @@ def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dic
 
 # noinspection PyArgumentList
 def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = None) -> List[Dict[str, Any]]:
-    soup = BeautifulSoup(fetch.body, "html.parser")
-    tables = soup.find_all("table")
-    
-    # If table_index is specified, extract only from that table
-    if table_index is not None:
-        try:
-            tables = [tables[table_index]]
-        except IndexError:
-            return []
-    
-    rows: List[Dict[str, Any]] = []
-    for t in tables:
-        # Check for thead with th elements (not wrapped in tr)
-        thead = t.find("thead")
-        headers = None
+    try:
+        soup = BeautifulSoup(fetch.body, "html.parser")
+        tables = soup.find_all("table")
 
-        if thead:
-            # Headers in thead (may or may not be in a tr)
-            # Check for both th and td elements (some tables use td with bold text for headers)
-            th_elements = thead.find_all(["th", "td"])
-            if th_elements:
-                headers = [th.get_text(separator=" ", strip=True) for th in th_elements]
+        # If table_index is specified, extract only from that table
+        if table_index is not None:
+            try:
+                tables = [tables[table_index]]
+            except IndexError:
+                return []
 
-        # Get data rows from tbody or all tr elements
-        tbody = t.find("tbody")
-        trs = tbody.find_all("tr") if tbody else t.find_all("tr")
+        rows: List[Dict[str, Any]] = []
+        for t in tables:
+            # Check for thead with th elements (not wrapped in tr)
+            thead = t.find("thead")
+            headers = None
 
-        if len(trs) < 1:
-            continue
+            if thead:
+                # Headers in thead (may or may not be in a tr)
+                # Check for both th and td elements (some tables use td with bold text for headers)
+                th_elements = thead.find_all(["th", "td"])
+                if th_elements:
+                    headers = [th.get_text(separator=" ", strip=True) for th in th_elements]
 
-        # Drop leading caption rows that span the entire table (common in RBI disclosure blocks)
-        while trs:
-            first_cells = trs[0].find_all(["td", "th"])
-            if len(first_cells) == 0:
-                trs = trs[1:]
+            # Get data rows from tbody or all tr elements
+            tbody = t.find("tbody")
+            trs = tbody.find_all("tr") if tbody else t.find_all("tr")
+
+            if len(trs) < 1:
                 continue
-            if len(first_cells) != 1:
+
+            # Drop leading caption rows that span the entire table (common in RBI disclosure blocks)
+            while trs:
+                first_cells = trs[0].find_all(["td", "th"])
+                if len(first_cells) == 0:
+                    trs = trs[1:]
+                    continue
+                if len(first_cells) != 1:
+                    break
+                first_cell = first_cells[0]
+                colspan = int(first_cell.get("colspan", 1) or 1)
+                has_th = len(trs[0].find_all("th")) > 0
+                text = first_cell.get_text(separator=" ", strip=True)
+                if colspan > 1 and not has_th and text:
+                    trs = trs[1:]
+                    continue
                 break
-            first_cell = first_cells[0]
-            colspan = int(first_cell.get("colspan", 1) or 1)
-            has_th = len(trs[0].find_all("th")) > 0
-            text = first_cell.get_text(separator=" ", strip=True)
-            if colspan > 1 and not has_th and text:
-                trs = trs[1:]
-                continue
-            break
 
-        if len(trs) < 1:
-            continue
-
-        # If no headers from thead, try to detect from first tr
-        if not headers:
-            first_row_cells = trs[0].find_all(["th", "td"])
-            potential_headers = [c.get_text(separator=" ", strip=True) for c in first_row_cells]
-
-            # Check if first row is actually a header (has th tags or non-numeric content)
-            has_th = len(trs[0].find_all("th")) > 0
-            # UniOrbit has a header row with all <td>s, so we need a more robust check
-            # that also accounts for currency symbols.
-            is_header_row = has_th or (potential_headers and not all(
-                h.replace('.', '').replace(',', '').replace('-', '').replace('₹', '').strip().isdigit() for h in
-                potential_headers if h.strip()))
-
-            if is_header_row and any(potential_headers):
-                headers = potential_headers
-                trs = trs[1:]  # Skip the header row
-
-        # If still no headers, use column indices
-        if not headers:
-            num_cols = len(trs[0].find_all(["td", "th"])) if trs else 0
-            headers = [f"col_{i}" for i in range(num_cols)]
-
-        span_buffers = [None] * len(headers)
-
-        # Extract data rows
-        for tr in trs:
-            cells = tr.find_all(["td", "th"])
-            if not cells:
-                continue
-            if len(cells) == 1:
-                span = int(cells[0].get("colspan", 1) or 1)
-                text = cells[0].get_text(separator=" ", strip=True)
-                if span >= len(headers) and text:
-                    continue
-            cell_iter = iter(cells)
-            vals: List[str] = []
-            col_idx = 0
-
-            while col_idx < len(headers):
-                span_entry = span_buffers[col_idx]
-                if span_entry:
-                    text, remaining = span_entry
-                    vals.append(text)
-                    remaining -= 1
-                    span_buffers[col_idx] = (text, remaining) if remaining > 0 else None
-                    col_idx += 1
-                    continue
-
-                try:
-                    cell = next(cell_iter)
-                except StopIteration:
-                    vals.append("")
-                    col_idx += 1
-                    continue
-
-                text = cell.get_text(separator=" ", strip=True)
-                colspan = int(cell.get("colspan", 1) or 1)
-                rowspan = int(cell.get("rowspan", 1) or 1)
-
-                for offset in range(colspan):
-                    target_col = col_idx + offset
-                    if target_col >= len(headers):
-                        break
-                    vals.append(text)
-                    if rowspan > 1:
-                        span_buffers[target_col] = (text, rowspan - 1)
-                col_idx += colspan
-
-            if not any(v.strip() for v in vals):
+            if len(trs) < 1:
                 continue
 
-            row_dict = {
-                headers[i] if i < len(headers) else f"col_{i}": vals[i] if i < len(vals) else ""
-                for i in range(len(headers))
-            }
-            rows.append(row_dict)
-    return rows
+            # If no headers from thead, try to detect from first tr
+            if not headers:
+                first_row_cells = trs[0].find_all(["th", "td"])
+                potential_headers = [c.get_text(separator=" ", strip=True) for c in first_row_cells]
+
+                # Check if first row is actually a header (has th tags or non-numeric content)
+                has_th = len(trs[0].find_all("th")) > 0
+                # UniOrbit has a header row with all <td>s, so we need a more robust check
+                # that also accounts for currency symbols.
+                is_header_row = has_th or (potential_headers and not all(
+                    h.replace('.', '').replace(',', '').replace('-', '').replace('₹', '').strip().isdigit() for h in
+                    potential_headers if h.strip()))
+
+                if is_header_row and any(potential_headers):
+                    headers = potential_headers
+                    trs = trs[1:]  # Skip the header row
+
+            # If still no headers, use column indices
+            if not headers:
+                num_cols = len(trs[0].find_all(["td", "th"])) if trs else 0
+                headers = [f"col_{i}" for i in range(num_cols)]
+
+            span_buffers = [None] * len(headers)
+
+            # Extract data rows
+            for tr in trs:
+                cells = tr.find_all(["td", "th"])
+                if not cells:
+                    continue
+                if len(cells) == 1:
+                    span = int(cells[0].get("colspan", 1) or 1)
+                    text = cells[0].get_text(separator=" ", strip=True)
+                    if span >= len(headers) and text:
+                        continue
+                cell_iter = iter(cells)
+                vals: List[str] = []
+                col_idx = 0
+
+                while col_idx < len(headers):
+                    span_entry = span_buffers[col_idx]
+                    if span_entry:
+                        text, remaining = span_entry
+                        vals.append(text)
+                        remaining -= 1
+                        span_buffers[col_idx] = (text, remaining) if remaining > 0 else None
+                        col_idx += 1
+                        continue
+
+                    try:
+                        cell = next(cell_iter)
+                    except StopIteration:
+                        vals.append("")
+                        col_idx += 1
+                        continue
+
+                    text = cell.get_text(separator=" ", strip=True)
+                    colspan = int(cell.get("colspan", 1) or 1)
+                    rowspan = int(cell.get("rowspan", 1) or 1)
+
+                    for offset in range(colspan):
+                        target_col = col_idx + offset
+                        if target_col >= len(headers):
+                            break
+                        vals.append(text)
+                        if rowspan > 1:
+                            span_buffers[target_col] = (text, rowspan - 1)
+                    col_idx += colspan
+
+                if not any(v.strip() for v in vals):
+                    continue
+
+                row_dict = {
+                    headers[i] if i < len(headers) else f"col_{i}": vals[i] if i < len(vals) else ""
+                    for i in range(len(headers))
+                }
+                rows.append(row_dict)
+        return rows
+    except Exception as exc:
+        raise RuntimeError(f"Failed to extract data from HTML tables: {exc}")
 
 
 def render_url_to_pdf(url: str,
@@ -618,12 +633,13 @@ def render_url_to_pdf(url: str,
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError("Playwright not installed/available. Install playwright to enable HTML->PDF rendering.")
     from playwright.sync_api import TimeoutError as PWTimeout
-    with sync_playwright() as context_manager:
-        browser = context_manager.chromium.launch(headless=True,
-                                                  args=["--disable-blink-features=AutomationControlled"])
-        context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=BROWSER_HEADERS)
-        page = context.new_page()
-        wait_mode = wait_until if wait_until in {"load", "domcontentloaded", "networkidle"} else "networkidle"
+    try:
+        with sync_playwright() as context_manager:
+            browser = context_manager.chromium.launch(headless=True,
+                                                      args=["--disable-blink-features=AutomationControlled"])
+            context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=BROWSER_HEADERS)
+            page = context.new_page()
+            wait_mode = wait_until if wait_until in {"load", "domcontentloaded", "networkidle"} else "networkidle"
         try:
             page.goto(url, wait_until=wait_mode, timeout=timeout_ms)
         except Exception as e:
@@ -654,6 +670,8 @@ def render_url_to_pdf(url: str,
             body=pdf_bytes,
             fetch_mode_used="playwright-pdf",
         )
+    except Exception as ex:
+        raise RuntimeError(f"Failed to render URL to PDF: {ex}")
 
 
 def extract_dlg_from_plain_text(
@@ -668,43 +686,46 @@ def extract_dlg_from_plain_text(
     Output schema:
       LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
     """
-    if scrape_ts is None:
-        scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
+    try:
+        if scrape_ts is None:
+            scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
 
-    text = _clean_html_to_text(html)
+        text = _clean_html_to_text(html)
 
-    # Check for FinAGG-specific format first
-    if "FinAGG" in lsp_name or "Portfolio OS as on" in text:
-        return parse_finagg_dlg_plain_text(text, lsp_name, scrape_ts)
-    
-    # Check for Finnable-specific format (alternating portfolio number and amount lines)
-    if "Finnable" in lsp_name or ("Portfolio Number" in text and "Disbursement" in text):
-        return parse_finnable_dlg_plain_text(text, lsp_name, scrape_ts)
+        # Check for FinAGG-specific format first
+        if "FinAGG" in lsp_name or "Portfolio OS as on" in text:
+            return parse_finagg_dlg_plain_text(text, lsp_name, scrape_ts)
 
-    # Check if rules specify regex-based extraction
-    if rules_json:
-        try:
-            rules = json.loads(rules_json) if isinstance(rules_json, str) else rules_json
-            field_map = rules.get("field_map", {})
+        # Check for Finnable-specific format (alternating portfolio number and amount lines)
+        if "Finnable" in lsp_name or ("Portfolio Number" in text and "Disbursement" in text):
+            return parse_finnable_dlg_plain_text(text, lsp_name, scrape_ts)
 
-            # Check if all fields use regex (regex-based extraction mode)
-            uses_regex = all(
-                isinstance(field_map.get(f), dict) and "regex" in field_map.get(f, {})
-                for f in ["lender", "portfolio", "amount"]
-                if f in field_map
-            )
+        # Check if rules specify regex-based extraction
+        if rules_json:
+            try:
+                rules = json.loads(rules_json) if isinstance(rules_json, str) else rules_json
+                field_map = rules.get("field_map", {})
 
-            if uses_regex:
-                return extract_from_regex_patterns(text, lsp_name, scrape_ts, rules)
-        except Exception:
-            pass  # Fall through to CRED-style parsing
+                # Check if all fields use regex (regex-based extraction mode)
+                uses_regex = all(
+                    isinstance(field_map.get(f), dict) and "regex" in field_map.get(f, {})
+                    for f in ["lender", "portfolio", "amount"]
+                    if f in field_map
+                )
 
-    """
-    This works for cred. Can include more such cases on need basis with conditions
-    """
-    rows = parse_cred_style_dlg_plain_text(text)
+                if uses_regex:
+                    return extract_from_regex_patterns(text, lsp_name, scrape_ts, rules)
+            except Exception:
+                pass  # Fall through to CRED-style parsing
 
-    return rows
+        """
+        This works for cred. Can include more such cases on need basis with conditions
+        """
+        rows = parse_cred_style_dlg_plain_text(text)
+
+        return rows
+    except Exception as ex:
+        raise RuntimeError(f"Error extracting DLG from plain text: {ex}")
 
 
 def extract_finsall_grand_total(
@@ -789,14 +810,14 @@ def extract_from_regex_patterns(
             if match:
                 date_str = match.group(1).strip()
                 as_on_date = parse_date_any(date_str)
-        
+
         # Try constant (backward compatibility)
         if not as_on_date and "constant" in as_on_config:
             try:
                 as_on_date = dateparser.parse(as_on_config["constant"])
             except Exception:
                 pass
-        
+
         # Fallback disabled - if no date found, leave as None
         # if not as_on_date and "fallback" in as_on_config:
         #     fallback_type = as_on_config["fallback"]
@@ -862,95 +883,99 @@ def parse_cred_style_dlg_plain_text(
     Returns rows with:
       LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
     """
+    deduped = []
+    error = ""
     scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
 
     # Normalize newlines and spaces
-    lines = [ln.strip() for ln in text.splitlines()]
-    # Keep empty lines as separators (we rely on headings)
-    # but remove repeated whitespace inside lines
-    lines = [re.sub(r"\s+", " ", ln) for ln in lines]
+    try:
+        lines = [ln.strip() for ln in text.splitlines()]
+        # Keep empty lines as separators (we rely on headings)
+        # but remove repeated whitespace inside lines
+        lines = [re.sub(r"\s+", " ", ln) for ln in lines]
 
-    rows: List[Dict[str, Any]] = []
+        rows: List[Dict[str, Any]] = []
 
-    current_lsp: Optional[str] = None
-    current_lender: Optional[str] = None
-    current_as_on: Optional[dt.datetime] = None
+        current_lsp: Optional[str] = None
+        current_lender: Optional[str] = None
+        current_as_on: Optional[dt.datetime] = None
 
-    # Patterns
-    p_app = re.compile(r"^Digital Lending App:\s*(.+)$", re.IGNORECASE)
-    p_as_on = re.compile(r"\bas on\b\s+(.+?)(?:\s*\(|\s*$)", re.IGNORECASE)
-    p_lender = re.compile(r"^(Lender\s+[A-Za-z0-9]+)\b.*?:\s*$", re.IGNORECASE)
-    p_portfolio = re.compile(
-        r"^Portfolio\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)?)\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*$",
-        re.IGNORECASE
-    )
+        # Patterns
+        p_app = re.compile(r"^Digital Lending App:\s*(.+)$", re.IGNORECASE)
+        p_as_on = re.compile(r"\bas on\b\s+(.+?)(?:\s*\(|\s*$)", re.IGNORECASE)
+        p_lender = re.compile(r"^(Lender\s+[A-Za-z0-9]+)\b.*?:\s*$", re.IGNORECASE)
+        p_portfolio = re.compile(
+            r"^Portfolio\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)?)\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*$",
+            re.IGNORECASE
+        )
 
-    def parse_date(s: str) -> Optional[dt.datetime]:
-        try:
-            return dateparser.parse(s, dayfirst=True, fuzzy=True)
-        except Exception:
-            return None
+        def parse_date(s: str) -> Optional[dt.datetime]:
+            try:
+                return dateparser.parse(s, dayfirst=True, fuzzy=True)
+            except Exception:
+                return None
 
-    for ln in lines:
-        if not ln:
-            continue
-
-        m_app = p_app.match(ln)
-        if m_app:
-            current_lsp = m_app.group(1).strip()
-            current_lender = None
-            current_as_on = None
-            continue
-
-        # capture as-on line anywhere under the app
-        if current_lsp:
-            m_ason = p_as_on.search(ln)
-            # only set if line actually contains "as on"
-            if m_ason and "as on" in ln.lower():
-                # Example trailing text: "November 30, 2025 (unaudited numbers):"
-                date_candidate = m_ason.group(1).strip()
-                # remove trailing qualifiers like "unaudited numbers" if present
-                date_candidate = re.sub(r"\bunaudited\b.*$", "", date_candidate, flags=re.IGNORECASE).strip(" :.-")
-                parsed = parse_date(date_candidate)
-                if parsed:
-                    current_as_on = parsed
-                # do not continue; line might also contain something else, but usually not
+        for ln in lines:
+            if not ln:
                 continue
 
-        m_lender = p_lender.match(ln)
-        if m_lender:
-            current_lender = m_lender.group(1).strip()
-            continue
+            m_app = p_app.match(ln)
+            if m_app:
+                current_lsp = m_app.group(1).strip()
+                current_lender = None
+                current_as_on = None
+                continue
 
-        m_port = p_portfolio.match(ln)
-        if m_port and current_lsp:
-            portfolio = m_port.group(1).strip()
-            amount = float(m_port.group(2))
+            # capture as-on line anywhere under the app
+            if current_lsp:
+                m_ason = p_as_on.search(ln)
+                # only set if line actually contains "as on"
+                if m_ason and "as on" in ln.lower():
+                    # Example trailing text: "November 30, 2025 (unaudited numbers):"
+                    date_candidate = m_ason.group(1).strip()
+                    # remove trailing qualifiers like "unaudited numbers" if present
+                    date_candidate = re.sub(r"\bunaudited\b.*$", "", date_candidate, flags=re.IGNORECASE).strip(" :.-")
+                    parsed = parse_date(date_candidate)
+                    if parsed:
+                        current_as_on = parsed
+                    # do not continue; line might also contain something else, but usually not
+                    continue
 
-            rows.append({
-                "LSP Name": current_lsp,
-                "Lender": current_lender,  # allowed to be None if not found
-                "Portfolio": portfolio,
-                "Amount": amount,
-                "AsOnTimestamp": current_as_on,
-                "ScrapeTimestamp": scrape_ts
-            })
+            m_lender = p_lender.match(ln)
+            if m_lender:
+                current_lender = m_lender.group(1).strip()
+                continue
 
-    # de-dupe (safe in case the text repeats)
-    seen = set()
-    deduped = []
-    for r in rows:
-        k = (
-            r["LSP Name"],
-            r["Lender"],
-            r["Portfolio"],
-            r["Amount"],
-            r["AsOnTimestamp"].isoformat() if r["AsOnTimestamp"] else None
-        )
-        if k in seen:
-            continue
-        seen.add(k)
-        deduped.append(r)
+            m_port = p_portfolio.match(ln)
+            if m_port and current_lsp:
+                portfolio = m_port.group(1).strip()
+                amount = float(m_port.group(2))
+
+                rows.append({
+                    "LSP Name": current_lsp,
+                    "Lender": current_lender,  # allowed to be None if not found
+                    "Portfolio": portfolio,
+                    "Amount": amount,
+                    "AsOnTimestamp": current_as_on,
+                    "ScrapeTimestamp": scrape_ts
+                })
+
+        # de-dupe (safe in case the text repeats)
+        seen = set()
+        for r in rows:
+            k = (
+                r["LSP Name"],
+                r["Lender"],
+                r["Portfolio"],
+                r["Amount"],
+                r["AsOnTimestamp"].isoformat() if r["AsOnTimestamp"] else None
+            )
+            if k in seen:
+                continue
+            seen.add(k)
+            deduped.append(r)
+    except RuntimeError as ex:
+        raise ex
 
     return deduped
 
@@ -975,7 +1000,7 @@ def parse_finnable_dlg_plain_text(
     Last updated as of November 2025
     """
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    
+
     # Find the date
     as_on_date = None
     date_match = re.search(r"Last updated as of ([A-Za-z]+ \d{4})", text, re.IGNORECASE)
@@ -986,27 +1011,27 @@ def parse_finnable_dlg_plain_text(
             # Month YYYY format - use last day of month
             as_on_date = parsed.replace(day=1) + dt.timedelta(days=32)
             as_on_date = as_on_date.replace(day=1) - dt.timedelta(days=1)
-    
+
     rows = []
     portfolio_started = False
     i = 0
-    
+
     while i < len(lines):
         line = lines[i]
-        
+
         if "Portfolio Number" in line:
             portfolio_started = True
             i += 1
             continue
-        
+
         if not portfolio_started:
             i += 1
             continue
-        
+
         # Stop at Total or Last updated
         if line.lower().startswith("total") or "last updated" in line.lower():
             break
-        
+
         # Check if line is a portfolio number (single digit)
         if re.match(r'^\d+$', line):
             portfolio_num = line
@@ -1030,9 +1055,9 @@ def parse_finnable_dlg_plain_text(
                         pass
                     i += 2  # Skip both lines
                     continue
-        
+
         i += 1
-    
+
     return rows
 
 
@@ -1058,41 +1083,41 @@ def parse_finagg_dlg_plain_text(
     
     Key insight: Standalone amounts appear BEFORE the portfolio line they belong to!
     """
-    
+
     rows: List[Dict[str, Any]] = []
-    
+
     # Extract date first
     as_on_date = None
     date_match = re.search(r"Portfolio OS as on ([0-9]{1,2}-[0-9]{1,2}-[0-9]{4})", text, re.IGNORECASE)
     if date_match:
         date_str = date_match.group(1)
         as_on_date = parse_date_any(date_str)
-    
+
     # Split into lines
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    
+
     pending_amount = None  # Amount from previous line to use with next portfolio
-    
+
     for i, line in enumerate(lines):
         # Check if this is a standalone amount line (to be used with NEXT portfolio)
-        if re.match(r"^[0-9,\s]+$", line) and 'Total' not in lines[i-1] if i > 0 else True:
+        if re.match(r"^[0-9,\s]+$", line) and 'Total' not in lines[i - 1] if i > 0 else True:
             clean_amount = line.replace(',', '').replace(' ', '')
             if len(clean_amount) >= 6:  # Reasonable amount size
                 pending_amount = clean_amount
                 continue
-        
+
         # Match lines starting with "Portfolio" - handle both "Portfolio9" and "Portfolio 9"
         match = re.match(r"Portfolio\s*([0-9l]+)(?:\s+([0-9,\s]+))?\s*(?:(Yes|No))?\s*$", line, re.IGNORECASE)
-        
+
         if match:
             portfolio_num = match.group(1)
             # Handle OCR artifacts
             if portfolio_num.lower() == 'l':
                 portfolio_num = '1'
-            
+
             amount_str = match.group(2)  # Amount on same line (if present)
             fldg = match.group(3)  # FLDG status
-            
+
             # Determine the amount to use
             if amount_str:
                 # Amount is on the same line
@@ -1105,16 +1130,16 @@ def parse_finagg_dlg_plain_text(
             else:
                 # No amount available, skip this portfolio
                 continue
-            
+
             try:
                 # Clean and parse amount
                 clean_amount = final_amount_str.replace(',', '').replace(' ', '')
                 amount = float(clean_amount)
-                
+
                 # Skip the Total row
                 if 'total' in portfolio_num.lower() or amount > 7000000000:  # Total is usually very large
                     continue
-                
+
                 rows.append({
                     "LSP Name": lsp_name,
                     "Lender": "FinAGG Services Private Limited",
@@ -1125,7 +1150,7 @@ def parse_finagg_dlg_plain_text(
                 })
             except ValueError:
                 pass  # Skip if amount can't be parsed
-    
+
     return rows
 
 
@@ -1155,12 +1180,12 @@ def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
         """Normalize text for field matching by replacing special chars that may have encoding issues."""
         # Replace rupee symbol and other currency symbols that might become ? in PostgreSQL
         return text.replace('₹', '?').replace('₨', '?').replace('₹', '?')
-    
+
     # First try exact match
     for k in keys:
         if k in rr and rr[k] is not None and str(rr[k]).strip():
             return str(rr[k]).strip()
-    
+
     # Then try normalized matching (handles encoding issues like ₹ -> ?)
     for col, v in rr.items():
         normalized_col = normalize_for_matching(str(col).lower())
@@ -1169,7 +1194,7 @@ def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
             if normalized_key in normalized_col:
                 if v is not None and str(v).strip():
                     return str(v).strip()
-    
+
     # Finally try original substring matching as fallback
     for col, v in rr.items():
         lcol = str(col).lower()
@@ -1183,14 +1208,14 @@ def pick_by_keys(rr: Dict[str, Any], keys: List[str]) -> Optional[str]:
 def extract_by_regex(text: str, pattern: str, group: int = 1) -> Optional[str]:
     if not text or not pattern:
         return None
-    
+
     # Only normalize text for currency symbol encoding issues (₹ -> ?)
     # Don't touch the pattern - let it be used as-is
     def normalize_currency_in_text(s: str) -> str:
         return s.replace('₹', '?').replace('₨', '?')
-    
+
     normalized_text = normalize_currency_in_text(text)
-    
+
     m = re.search(pattern, normalized_text, flags=re.IGNORECASE | re.DOTALL)
     if not m:
         return None
@@ -1202,58 +1227,61 @@ def extract_by_regex(text: str, pattern: str, group: int = 1) -> Optional[str]:
 
 # noinspection PyArgumentList
 def page_level_values(fetch: FetchResult, rules: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    page_rules = rules.get("page_level") or {}
-    table_index = rules.get("table_index")
+    try:
+        out: Dict[str, Any] = {}
+        page_rules = rules.get("page_level") or {}
+        table_index = rules.get("table_index")
 
-    body_text = ""
-    if not looks_like_pdf(fetch):
-        try:
-            soup = BeautifulSoup(fetch.body, "html.parser")
-            # noinspection PyArgumentList
-            body_text = soup.get_text(" ", strip=True)
-        except Exception:
-            body_text = ""
-
-    if "as_on_constant" in page_rules:
-        out["as_on"] = page_rules["as_on_constant"]
-
-    if "lender_constant" in page_rules:
-        out["lender"] = page_rules["lender_constant"]
-
-    lender_regex = page_rules.get("lender_regex")
-    if lender_regex and body_text:
-        try:
-            soup = BeautifulSoup(fetch.body, "html.parser")
-            body_text = soup.get_text("\n", strip=True)
-        except Exception:
-            body_text = ""
-        grp = int(page_rules.get("lender_group", 1))
-        v = extract_by_regex(body_text, lender_regex, group=grp)
-        if v:
-            out["lender"] = v
-
-    as_on_regex = page_rules.get("as_on_regex")
-    if as_on_regex and body_text:
-        grp = int(page_rules.get("as_on_group", 1))
-        # If table_index is specified, find all matches and select the one at that index
-        if table_index is not None:
+        body_text = ""
+        if not looks_like_pdf(fetch):
             try:
-                matches = re.findall(as_on_regex, body_text, flags=re.IGNORECASE | re.DOTALL)
-                if matches:
-                    # Handle both single groups and tuple groups from regex
-                    if isinstance(matches[table_index], tuple):
-                        out["as_on"] = matches[table_index][grp - 1].strip()
-                    else:
-                        out["as_on"] = matches[table_index].strip()
-            except (IndexError, Exception):
-                pass
-        else:
-            v = extract_by_regex(body_text, as_on_regex, group=grp)
-            if v:
-                out["as_on"] = v
+                soup = BeautifulSoup(fetch.body, "html.parser")
+                # noinspection PyArgumentList
+                body_text = soup.get_text(" ", strip=True)
+            except Exception:
+                body_text = ""
 
-    return out
+        if "as_on_constant" in page_rules:
+            out["as_on"] = page_rules["as_on_constant"]
+
+        if "lender_constant" in page_rules:
+            out["lender"] = page_rules["lender_constant"]
+
+        lender_regex = page_rules.get("lender_regex")
+        if lender_regex and body_text:
+            try:
+                soup = BeautifulSoup(fetch.body, "html.parser")
+                body_text = soup.get_text("\n", strip=True)
+            except Exception:
+                body_text = ""
+            grp = int(page_rules.get("lender_group", 1))
+            v = extract_by_regex(body_text, lender_regex, group=grp)
+            if v:
+                out["lender"] = v
+
+        as_on_regex = page_rules.get("as_on_regex")
+        if as_on_regex and body_text:
+            grp = int(page_rules.get("as_on_group", 1))
+            # If table_index is specified, find all matches and select the one at that index
+            if table_index is not None:
+                try:
+                    matches = re.findall(as_on_regex, body_text, flags=re.IGNORECASE | re.DOTALL)
+                    if matches:
+                        # Handle both single groups and tuple groups from regex
+                        if isinstance(matches[table_index], tuple):
+                            out["as_on"] = matches[table_index][grp - 1].strip()
+                        else:
+                            out["as_on"] = matches[table_index].strip()
+                except (IndexError, Exception):
+                    pass
+            else:
+                v = extract_by_regex(body_text, as_on_regex, group=grp)
+                if v:
+                    out["as_on"] = v
+
+        return out
+    except Exception as ex:
+        raise RuntimeError(f"Error extracting page-level values: {ex}")
 
 
 def normalize_rows(
@@ -1262,7 +1290,7 @@ def normalize_rows(
         lsp_name: str,
         scrape_ts: dt.datetime,
         rules_json: Optional[str]
-) -> Tuple[CrawlStatus, List[Dict[str, Any]]]:
+) -> Tuple[CrawlStatus, List[Dict[str, Any]], str]:
     rules = load_rules(rules_json)
     field_map = rules.get("field_map") or {}
     page_vals = page_level_values(fetch, rules)
@@ -1289,7 +1317,7 @@ def normalize_rows(
         # Handle constant value
         if "constant" in spec and spec["constant"] is not None:
             return str(spec["constant"]).strip()
-        
+
         # Handle regex-based column matching (when regex is meant to find the COLUMN, not extract from value)
         # This is the case when we have {"regex": "..."} without "keys"
         if "regex" in spec and "keys" not in spec and fname != "as_on":
@@ -1300,17 +1328,17 @@ def normalize_rows(
                     if col_value is not None and str(col_value).strip():
                         return str(col_value).strip()
             return None
-        
+
         # Handle dynamic date extraction for as_on field
         # Only process if spec has actual configuration (not just an empty dict)
         if fname == "as_on" and isinstance(spec, dict) and spec:
             extracted_date = None
-            
+
             # Try to extract date from column names (not values)
             if "extract_regex" in spec:
                 extract_from = spec.get("extract_from", "amount_column")
                 date_format = spec.get("date_format", None)
-                
+
                 # Determine which column name to extract from
                 source_column_name = None
                 if extract_from == "amount_column":
@@ -1336,7 +1364,7 @@ def normalize_rows(
                                         break
                                 if source_column_name:
                                     break
-                
+
                 elif extract_from == "portfolio_column":
                     # Get the portfolio field spec to find the column name
                     portfolio_spec = field_map.get("portfolio")
@@ -1360,7 +1388,7 @@ def normalize_rows(
                                         break
                                 if source_column_name:
                                     break
-                
+
                 # Try to extract date from the column name using regex
                 if source_column_name:
                     extracted = extract_by_regex(source_column_name, spec["extract_regex"], group=1)
@@ -1375,17 +1403,17 @@ def normalize_rows(
                             parsed_date = parse_date_any(extracted)
                             if parsed_date:
                                 extracted_date = parsed_date.strftime("%Y-%m-%d")
-            
+
             # Handle extract_from_button for SaveIN (button text contains date)
             if not extracted_date and spec.get("extract_from_button"):
                 # This would be handled by the playwright pre-click logic
                 # The button text might be in page_vals or we fall back
                 pass
-            
+
             # If extraction succeeded, return it
             if extracted_date:
                 return extracted_date
-            
+
             # If no explicit extraction method worked, try standard field extraction first
             # (this picks up dates from PDF 'ason' field, HTML date columns, etc.)
             if not extracted_date:
@@ -1393,7 +1421,7 @@ def normalize_rows(
                 standard_val = pick_by_keys(raw_row, keys)
                 if standard_val:
                     return standard_val
-            
+
             # Fallback disabled - if no date found, return None instead of calculating fallback
             # This ensures data accuracy - only actual dates from pages are used
             # if "fallback" in spec:
@@ -1404,10 +1432,10 @@ def normalize_rows(
             #     elif fallback_type == "previous_quarter_end":
             #         fallback_date = calculate_previous_quarter_end(scrape_ts)
             #         return fallback_date.strftime("%Y-%m-%d")
-            
+
             # If we processed as_on but found nothing, return None (don't fall through to standard extraction)
             return None
-        
+
         # Standard field extraction
         keys = spec.get("keys") or defaults[fname]
         val = pick_by_keys(raw_row, keys)
@@ -1427,10 +1455,10 @@ def normalize_rows(
     final_data: List[Dict[str, Any]] = []
 
     if not raw_rows:
-        return CrawlStatus.NO_DATA, final_data
+        return CrawlStatus.NO_DATA, final_data, "No rows extracted from page"
 
     if not len(raw_rows) > 0:
-        return CrawlStatus.NO_DATA, final_data
+        return CrawlStatus.NO_DATA, final_data, "No rows extracted from page"
 
     try:
         for rr in raw_rows:
@@ -1531,14 +1559,14 @@ def normalize_rows(
             final_data = forward_fill_columns(final_data, forward_fill_cols)
     except Exception as ex:
         error = str(ex)
-        return CrawlStatus.ERROR, final_data
+        return CrawlStatus.ERROR, final_data, error
 
     for r in final_data:
         if r["Portfolio"] is None or r["Amount"] is None:
-            return CrawlStatus.PARTIAL, final_data
+            return CrawlStatus.PARTIAL, final_data, "Missing portfolio or amount in some rows"
         if r["AsOnTimestamp"] is None:
-            return CrawlStatus.STALE, final_data
-    return CrawlStatus.COMPLETED, final_data
+            return CrawlStatus.STALE, final_data, "Missing as-on date in some rows - data may be stale"
+    return CrawlStatus.COMPLETED, final_data, "All rows complete"
 
 
 def is_header_row(row: Dict[str, Any]) -> bool:

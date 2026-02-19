@@ -323,34 +323,36 @@ def extract_simple(
     text_dump: List[dict] = [] if dump_text else []
 
     pdf_source: Union[str, BinaryIO]
-    if isinstance(pdf_path, (str, Path)):
-        pdf_source = str(pdf_path)
-    elif isinstance(pdf_path, bytes):
-        pdf_source = io.BytesIO(pdf_path)
-    else:
-        pdf_source = pdf_path
+    try:
+        if isinstance(pdf_path, (str, Path)):
+            pdf_source = str(pdf_path)
+        elif isinstance(pdf_path, bytes):
+            pdf_source = io.BytesIO(pdf_path)
+        else:
+            pdf_source = pdf_path
 
-    with pdfplumber.open(pdf_source) as pdf:
-        for page_no, page in enumerate(pdf.pages, start=1):
-            lines = _ocr_lines(
-                page,
-                resolution=resolution,
-                lang=lang,
-                min_conf=min_conf,
-                crop_top_pct=crop_top,
-                crop_bottom_pct=crop_bottom,
-                slice_count=slice_count,
-            )
-            if dump_text is not None:
-                for raw_line in lines:
-                    text_dump.append({"page": page_no, "text": raw_line})
-            all_records.extend(_extract_amounts(lines, page_no))
+        with pdfplumber.open(pdf_source) as pdf:
+            for page_no, page in enumerate(pdf.pages, start=1):
+                lines = _ocr_lines(
+                    page,
+                    resolution=resolution,
+                    lang=lang,
+                    min_conf=min_conf,
+                    crop_top_pct=crop_top,
+                    crop_bottom_pct=crop_bottom,
+                    slice_count=slice_count,
+                )
+                if dump_text is not None:
+                    for raw_line in lines:
+                        text_dump.append({"page": page_no, "text": raw_line})
+                all_records.extend(_extract_amounts(lines, page_no))
 
-    if dump_text is not None:
-        dump_text.write_text(json.dumps(text_dump, indent=2), encoding="utf-8")
+        if dump_text is not None:
+            dump_text.write_text(json.dumps(text_dump, indent=2), encoding="utf-8")
 
-    return all_records
-
+        return all_records
+    except Exception as exc:
+        raise RuntimeError(f"Failed to extract from PDF: {exc}")
 
 def _write_output(records: List[SimpleRecord], output: Path, simple_csv: bool) -> None:
     payload = [asdict(rec) for rec in records]

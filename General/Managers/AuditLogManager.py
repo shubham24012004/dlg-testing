@@ -112,7 +112,7 @@ class AuditLogManager:
                     "auto_manual": row.auto_manual,
                     "user_id": row.user_id,
                     "payload": payload_val,
-                    "action_taken": row.action_taken.value if hasattr(row.action_taken, "value") else str(row.action_taken),
+                    "action_taken": row.action_taken,
                     "log_timestamp": row.log_timestamp,
                 })
 

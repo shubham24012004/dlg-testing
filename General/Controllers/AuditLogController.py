@@ -31,9 +31,6 @@ def handle_list_audit_log():
                                  type=str)
         end = request.args.get("end", default=(dt.datetime.now() + dt.timedelta(1)).strftime('%d-%m-%Y'),
                                type=str)
-        action = getattr(AuditAction, action_str.upper(), None)
-        if not action:
-            action_str = None
         start_date = dt.datetime.strptime(start, '%d-%m-%Y')
         end_date = dt.datetime.strptime(end, '%d-%m-%Y')
     except Exception as ex:
@@ -44,7 +41,7 @@ def handle_list_audit_log():
     try:
         audit_service = AuditLogService(user_claims)
         results, total_count, rows = audit_service.list_audit_logs(start_date=start_date, end_date=end_date, lsp_id=lsp_id,
-                                                      action_str=action, page=page, page_size=page_size)
+                                                      action_str=action_str, page=page, page_size=page_size)
         if rows > 0:
             logger.info(f"{user_info} Audit Logs Fetched successfully - Count: {rows}")
             return jsonify({"status": HTTPStatus.OK, "message": "Audit Logs Fetched", "user_info": user_info, "data": results,
