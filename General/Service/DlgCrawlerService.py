@@ -69,7 +69,7 @@ class DlgCrawlerService:
                 )
                 self.logger.error(f"[ERR logging Audit Log] {source.name} -> Error ({str(exc)[:120]})")
 
-    def scrape_one(self, source: LspMaster) -> Tuple[CrawlStatus, Optional[str], Optional[str], List[Dict[str, Any]]]:
+    def scrape_one(self, source: LspMaster) -> Tuple[CrawlStatus, Optional[str], Optional[str], List[Dict[str, Any]], str]:
         scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
         rules = load_rules(source.rules_json) if source.rules_json else {}
         pre_click_js = rules.get("pre_click_js")
@@ -77,9 +77,12 @@ class DlgCrawlerService:
         simple_cfg = ocr_rules.get("simple") if isinstance(ocr_rules.get("simple"), dict) else ocr_rules
 
         if not source.dlg_url:
-            return CrawlStatus.MISSING, None, None , []
-
-        fetch = self._execute_fetch(source, pre_click_js)
+            return CrawlStatus.MISSING, None, None , [], "Missing DLG URL"
+        try:
+            fetch = self._execute_fetch(source, pre_click_js) #T&C
+        
+        except Exception as exc:
+            return CrawlStatus.ERROR, None, None, [], str(exc)
         
         # For OCR with HTML→PDF rendering, extract page-level values (like dates) from HTML before rendering
         html_page_values = {}
@@ -88,20 +91,23 @@ class DlgCrawlerService:
             if render_pdf:
                 # Extract date/lender info from HTML before it's converted to PDF
                 from utils.utils import page_level_values
-                html_page_values = page_level_values(fetch, rules)
-                
-                fetch = render_url_to_pdf(
-                    url=source.dlg_url,
-                    timeout_ms=self._coerce_int(simple_cfg.get("render_timeout_ms")) or 120_000,
-                    wait_ms=self._coerce_int(simple_cfg.get("render_wait_ms")) or 0,
-                    wait_until=simple_cfg.get("render_wait_until") or "networkidle",
-                    pre_click_js=pre_click_js)
+                try:
+                    html_page_values = page_level_values(fetch, rules)
+                    
+                    fetch = render_url_to_pdf(
+                        url=source.dlg_url,
+                        timeout_ms=self._coerce_int(simple_cfg.get("render_timeout_ms")) or 120_000,
+                        wait_ms=self._coerce_int(simple_cfg.get("render_wait_ms")) or 0,
+                        wait_until=simple_cfg.get("render_wait_until") or "networkidle",
+                        pre_click_js=pre_click_js)
+                except Exception as exc:
+                    return CrawlStatus.ERROR, None, None, [], f"OCR with HTML→PDF rendering failed: {exc}"
             else:
                 raise RuntimeError(
                     "parse_hint=ocr_simple requires a PDF disclosure; set ocr.render_pdf=true to render HTML to PDF"
                 )
 
-        raw_rows = self._parse_rows(
+        raw_rows, parse_error = self._parse_rows(
             source=source,
             fetch=fetch,
             rules=rules,
@@ -112,15 +118,15 @@ class DlgCrawlerService:
         if not raw_rows and source.name.lower().startswith("finsall"):
             raw_rows = extract_finsall_grand_total(fetch, source.name, scrape_ts, rules)
 
-        crawl_status, normalized = normalize_rows(
+        crawl_status, normalized, error = normalize_rows(
             raw_rows=raw_rows,
             fetch=fetch,
             lsp_name=source.name,
             scrape_ts=scrape_ts,
             rules_json=source.rules_json,
         )
-
-        return crawl_status, fetch.fetch_mode_used, fetch.content_type, normalized
+        final_error = f"Parse error: {parse_error}, Error: {error}"
+        return crawl_status, fetch.fetch_mode_used, fetch.content_type, normalized, final_error
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -198,28 +204,32 @@ class DlgCrawlerService:
                     rules: Dict[str, Any],
                     scrape_ts: dt.datetime,
                     html_page_values: Optional[Dict[str, Any]] = None,
-                    ) -> List[Dict[str, Any]]:
+                    ) -> List[Dict[str, Any], str]:
         parse_hint = (source.parse_hint or "auto").lower()
-        if parse_hint == "plain_text":
-            return extract_dlg_from_plain_text(fetch.body, lsp_name=source.name, scrape_ts=scrape_ts,
-                                               rules_json=source.rules_json)
-        if parse_hint == "ocr_simple":
-            return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules, html_page_values or {})
-        if parse_hint == "pdf_table" or looks_like_pdf(fetch):
-            return extract_from_pdf(fetch)
-        if parse_hint == "html_table":
-            return extract_from_html_tables(fetch, table_index=rules.get("table_index"))
+        try:
+            if parse_hint == "plain_text":
+                return extract_dlg_from_plain_text(fetch.body, lsp_name=source.name, scrape_ts=scrape_ts,
+                                                rules_json=source.rules_json)
+            if parse_hint == "ocr_simple":
+                return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules, html_page_values or {})
+            if parse_hint == "pdf_table" or looks_like_pdf(fetch):
+                return extract_from_pdf(fetch)
+            if parse_hint == "html_table":
+                return extract_from_html_tables(fetch, table_index=rules.get("table_index"))
 
-        # auto
-        if looks_like_pdf(fetch):
-            return extract_from_pdf(fetch)
+            # auto
+            if looks_like_pdf(fetch):
+                return extract_from_pdf(fetch)
 
-        rows = extract_from_html_tables(fetch, table_index=rules.get("table_index"))
-        if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
-            fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"))
-            rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"))
-        return rows
-
+            rows = extract_from_html_tables(fetch, table_index=rules.get("table_index"))
+            if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
+                fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"))
+                rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"))
+            return rows, None
+        except Exception as exc:
+            self.logger.error(f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}")
+            error = f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}"
+            return [], error
     # ------------------------------------------------------------------
     # Playwright + OCR helpers (mostly lifted from the legacy script)
     # ------------------------------------------------------------------
@@ -250,87 +260,91 @@ class DlgCrawlerService:
             rules: Dict[str, Any],
             html_page_values: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        if not looks_like_pdf(fetch):
-            raise RuntimeError("parse_hint=ocr_simple requires a PDF disclosure")
+        try:
+            if not looks_like_pdf(fetch):
+                raise RuntimeError("parse_hint=ocr_simple requires a PDF disclosure")
 
-        ocr_rules = rules.get("ocr") or {}
-        simple_cfg = ocr_rules.get("simple") if isinstance(ocr_rules.get("simple"), dict) else ocr_rules
-        if not simple_cfg:
-            raise RuntimeError("Missing 'ocr' configuration for parse_hint=ocr_simple")
+            ocr_rules = rules.get("ocr") or {}
+            simple_cfg = ocr_rules.get("simple") if isinstance(ocr_rules.get("simple"), dict) else ocr_rules
+            if not simple_cfg:
+                raise RuntimeError("Missing 'ocr' configuration for parse_hint=ocr_simple")
 
-        method = (simple_cfg.get("method") or "simple").lower()
-        if method != "simple":
-            raise RuntimeError(f"Unsupported OCR method '{method}'")
+            method = (simple_cfg.get("method") or "simple").lower()
+            if method != "simple":
+                raise RuntimeError(f"Unsupported OCR method '{method}'")
 
-        resolution = self._coerce_int(simple_cfg.get("resolution")) or 300
-        min_conf = self._coerce_int(simple_cfg.get("min_conf")) or 60
-        slice_count = self._coerce_int(simple_cfg.get("slice_count")) or 0
-        crop_top = self._coerce_float(simple_cfg.get("crop_top_pct"))
-        crop_bottom = self._coerce_float(simple_cfg.get("crop_bottom_pct"))
-        lang = simple_cfg.get("lang", "eng")
-        amount_unit = (simple_cfg.get("amount_unit") or "rupees").lower()
+            resolution = self._coerce_int(simple_cfg.get("resolution")) or 300
+            min_conf = self._coerce_int(simple_cfg.get("min_conf")) or 60
+            slice_count = self._coerce_int(simple_cfg.get("slice_count")) or 0
+            crop_top = self._coerce_float(simple_cfg.get("crop_top_pct"))
+            crop_bottom = self._coerce_float(simple_cfg.get("crop_bottom_pct"))
+            lang = simple_cfg.get("lang", "eng")
+            amount_unit = (simple_cfg.get("amount_unit") or "rupees").lower()
 
-        records = extract_simple(
-            pdf_path=fetch.body,
-            resolution=resolution,
-            lang=lang,
-            min_conf=min_conf,
-            dump_text=None,
-            crop_top=crop_top,
-            crop_bottom=crop_bottom,
-            slice_count=slice_count,
-        )
-
-        field_map = rules.get("field_map") or {}
-        as_on_cfg = field_map.get("as_on")
-        as_on_dt = None
-        
-        # Try HTML page-level values first (extracted before render_pdf)
-        if html_page_values.get("as_on"):
-            as_on_dt = parse_date_any(html_page_values["as_on"])
-        # Then try field_map config
-        elif isinstance(as_on_cfg, dict):
-            # Try constant first
-            if "constant" in as_on_cfg:
-                as_on_dt = parse_date_any(as_on_cfg.get("constant"))
-            # Try fallback if no constant
-            elif "fallback" in as_on_cfg:
-                fallback_type = as_on_cfg["fallback"]
-                if fallback_type == "previous_month_end":
-                    from utils.utils import calculate_previous_month_end
-                    as_on_dt = calculate_previous_month_end(scrape_ts)
-                elif fallback_type == "previous_quarter_end":
-                    from utils.utils import calculate_previous_quarter_end
-                    as_on_dt = calculate_previous_quarter_end(scrape_ts)
-        elif isinstance(as_on_cfg, str):
-            as_on_dt = parse_date_any(as_on_cfg)
-
-        lender_constant = None
-        lender_cfg = field_map.get("lender")
-        if isinstance(lender_cfg, dict) and lender_cfg.get("constant"):
-            lender_constant = lender_cfg.get("constant")
-
-        def to_crores(raw_amount: float) -> float:
-            if amount_unit.startswith("crore"):
-                return raw_amount
-            if amount_unit.startswith("lakh"):
-                return raw_amount / 100.0
-            return raw_amount / 10_000_000.0
-
-        rows: List[Dict[str, Any]] = []
-        for record in records:
-            portfolio = record.portfolio_hint or None
-            if not portfolio:
-                continue
-            amount_crores = round(to_crores(record.amount), 4)
-            rows.append(
-                {
-                    "LSP Name": lsp_name,
-                    "Lender": lender_constant,
-                    "Portfolio": portfolio,
-                    "Amount": amount_crores,
-                    "AsOnTimestamp": as_on_dt,
-                    "ScrapeTimestamp": scrape_ts,
-                }
+            records = extract_simple(
+                pdf_path=fetch.body,
+                resolution=resolution,
+                lang=lang,
+                min_conf=min_conf,
+                dump_text=None,
+                crop_top=crop_top,
+                crop_bottom=crop_bottom,
+                slice_count=slice_count,
             )
-        return rows
+
+            field_map = rules.get("field_map") or {}
+            as_on_cfg = field_map.get("as_on")
+            as_on_dt = None
+            
+            # Try HTML page-level values first (extracted before render_pdf)
+            if html_page_values.get("as_on"):
+                as_on_dt = parse_date_any(html_page_values["as_on"])
+            # Then try field_map config
+            elif isinstance(as_on_cfg, dict):
+                # Try constant first
+                if "constant" in as_on_cfg:
+                    as_on_dt = parse_date_any(as_on_cfg.get("constant"))
+                # Try fallback if no constant
+                elif "fallback" in as_on_cfg:
+                    fallback_type = as_on_cfg["fallback"]
+                    if fallback_type == "previous_month_end":
+                        from utils.utils import calculate_previous_month_end
+                        as_on_dt = calculate_previous_month_end(scrape_ts)
+                    elif fallback_type == "previous_quarter_end":
+                        from utils.utils import calculate_previous_quarter_end
+                        as_on_dt = calculate_previous_quarter_end(scrape_ts)
+            elif isinstance(as_on_cfg, str):
+                as_on_dt = parse_date_any(as_on_cfg)
+
+            lender_constant = None
+            lender_cfg = field_map.get("lender")
+            if isinstance(lender_cfg, dict) and lender_cfg.get("constant"):
+                lender_constant = lender_cfg.get("constant")
+
+            def to_crores(raw_amount: float) -> float:
+                if amount_unit.startswith("crore"):
+                    return raw_amount
+                if amount_unit.startswith("lakh"):
+                    return raw_amount / 100.0
+                return raw_amount / 10_000_000.0
+
+            rows: List[Dict[str, Any]] = []
+            for record in records:
+                portfolio = record.portfolio_hint or None
+                if not portfolio:
+                    continue
+                amount_crores = round(to_crores(record.amount), 4)
+                rows.append(
+                    {
+                        "LSP Name": lsp_name,
+                        "Lender": lender_constant,
+                        "Portfolio": portfolio,
+                        "Amount": amount_crores,
+                        "AsOnTimestamp": as_on_dt,
+                        "ScrapeTimestamp": scrape_ts,
+                    }
+                )
+            return rows
+        except Exception as exc:
+            self.logger.error(f"Error in OCR extraction for {lsp_name}: {exc}")
+            raise RuntimeError(f"Error in OCR extraction for {lsp_name}: {exc}")
