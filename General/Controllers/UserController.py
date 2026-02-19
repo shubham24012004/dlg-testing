@@ -225,7 +225,6 @@ def update_password() -> Any:
 
 
 @user_bp.post("/api/user/reset-password")
-@token_required
 def reset_password() -> Any:
     """Reset user password.
 
