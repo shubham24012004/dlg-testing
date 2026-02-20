@@ -57,7 +57,7 @@ def handle_list_lsp_master():
              "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@lsp_master_bp.get("/api/dlg_url")
+@lsp_master_bp.post("/api/dlg_url")
 @token_required
 def get_dlg_url():
     """Handle LSP master list request."""
@@ -66,23 +66,29 @@ def get_dlg_url():
     user_role = user_claims.get('role', 'unknown')
     user_info = f"[User: {username}, Role: {user_role}]"
     try:
-        lsp_id = request.args.get('lsp_id', default=0, type=int)
-        if lsp_id <= 0:
-            logger.info(f"{user_info} Invalid lsp id to find DLG ULR : {lsp_id}")
-            return jsonify({"status": HTTPStatus.BAD_REQUEST, "message": f"Invalid lsp_id: {lsp_id}",
+        payload = request.get_json(silent=True)
+        if not payload:
+            logger.info(f"{user_info} Home URL is required to find DLG URL")
+            return jsonify({"status": HTTPStatus.BAD_REQUEST, "message": f"Missing Home URL",
                             "user_info": user_info}), HTTPStatus.BAD_REQUEST
 
-        logger.info(f"{user_info} Calling find_dlg_url for LSP : {lsp_id}")
+        home_url = payload['home_url']
+        if not home_url:
+            logger.info(f"{user_info} Home URL is required to find DLG URL")
+            return jsonify({"status": HTTPStatus.BAD_REQUEST, "message": f"Missing Home URL",
+                            "user_info": user_info}), HTTPStatus.BAD_REQUEST
+
+        logger.info(f"{user_info} Calling find_dlg_url for : {home_url}")
         lsp_service = LSPMasterService(user_claims)
-        lsp_name, dlg_url, reason = lsp_service.find_dlg_url(lsp_id)
+        dlg_url, reason = lsp_service.find_dlg_url(home_url)
 
         if dlg_url:
-            return jsonify({"status": HTTPStatus.OK, "message": "DLG Url Found", "user_info": user_info,
+            return jsonify({"status": HTTPStatus.OK, "message": f"DLG Url Found for {home_url} after {reason}", "user_info": user_info,
                             "data": {"dlg_url": dlg_url}}), HTTPStatus.OK
         else:
-            logger.info(f"{user_info} DLG URL not found for {lsp_name}")
+            logger.info(f"{user_info} DLG URL not found for {home_url}")
             return jsonify(
-                {"status": HTTPStatus.NOT_FOUND, "message": f'DLG URL Not Found for {lsp_name} reason: {reason}',
+                {"status": HTTPStatus.NOT_FOUND, "message": f'DLG URL Not Found for {home_url} reason: {reason}',
                  "user_info": user_info}), HTTPStatus.NOT_FOUND
     except Exception as exc:
         logger.critical(f"{user_info} Exception finding DLG URL: {str(exc)}", exc_info=True)

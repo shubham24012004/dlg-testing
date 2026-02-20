@@ -119,24 +119,17 @@ class LSPMasterService:
             )
             raise ex
 
-    def find_dlg_url(self, lsp_id):
+    def find_dlg_url(self, home_url):
         dlg_url = None
         reason = None
         lsp_name = ""
-        home_url = ""
         try:
-            lsps, count = self.list_lsp_master(lsp_id=lsp_id)
-            if len(lsps) > 0:
-                for row in lsps:
-                    lsp = LspMaster(**row)
-                    dlg_url, reason = self.disclosure_url_service.find_dlg_disclosure_url(lsp.home_url)
-                    lsp_name = lsp.name
-                    home_url = lsp.home_url
+            dlg_url, reason = self.disclosure_url_service.find_dlg_disclosure_url(home_url)
         except Exception as ex:
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=lsp_id,
+                    lsp_id=None,
                     action_taken=AuditAction.URL_FINDER,
                     auto_manual="auto",
                     user_id=user_id,
@@ -147,16 +140,16 @@ class LSPMasterService:
         user_id = self.user_claims.get('username') if self.user_claims else "system"
         self.auditlog_service.record(
             self.auditlog_service.build(
-                lsp_id=lsp_id,
+                lsp_id=None,
                 action_taken=AuditAction.URL_FINDER,
                 auto_manual="auto",
                 user_id=user_id,
                 payload={"status": "Success",
-                         "details": {"lsp_name": lsp_name, "home_url": home_url, "dlg_url": dlg_url},
-                         "request_object": f'lsp_id: {lsp_id}'}
+                         "details": {"home_url": home_url, "dlg_url": dlg_url, "reason": reason},
+                         "request_object": f'home_url: {home_url}'}
             )
         )
-        return lsp_name, dlg_url, reason
+        return dlg_url, reason
 
     def load_active(self, lsp_id: Optional[int] = None) -> List[LspMaster]:
         result, total_count, rows = self.list_lsp_master(active_only=True, lsp_id=lsp_id)
@@ -168,7 +161,7 @@ class LSPMasterService:
 
     def list_lsp_master(
             self, active_only: bool = False, per_page: int = 10, page: int = 1, lsp_id: int = None,
-            lsp_name: str = None,lsp_type: str = None
+            lsp_name: str = None, lsp_type: str = None
     ) -> tuple[list[dict[Any, Any] | dict[str, Any] | dict[str, str]], Any, Any]:
 
         return self.lsp_manager.list_lsp_master(active_only, per_page, page, lsp_id, lsp_name, lsp_type)
