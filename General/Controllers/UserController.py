@@ -234,10 +234,7 @@ def reset_password() -> Any:
             "password": "newpassword"
         }
     """
-    user_claims = request.user_claims
-    username = user_claims['username']
-    user_role = user_claims.get('role', 'unknown')
-    user_info = f"[User: {username}, Role: {user_role}]"
+    user_info = "User: Reset_User, Role: User_role"
 
     try:
         data = request.get_json(silent=True)
@@ -258,18 +255,18 @@ def reset_password() -> Any:
             }), HTTPStatus.BAD_REQUEST
 
         # Reset password
-        user_service = UserService(user_claims)
+        user_service = UserService()
         success, error = user_service.set_password(data['username'], default_password, reset_password=True)
 
         if not success:
-            logger.warning(f"{user_info} Failed to reset password for user {username}: {error}")
+            logger.warning(f"{user_info} Failed to reset password for user {data['username']}: {error}")
             return jsonify({
                 "status": HTTPStatus.BAD_REQUEST,
                 "message": error,
                 "user_info": user_info
             }), HTTPStatus.BAD_REQUEST
 
-        logger.info(f"{user_info} Successfully reset password for user {username}")
+        logger.info(f"{user_info} Successfully reset password for user {data['username']}")
         return jsonify({
             "status": HTTPStatus.OK,
             "message": "Password reset successfully",

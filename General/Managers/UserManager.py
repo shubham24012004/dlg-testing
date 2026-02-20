@@ -96,11 +96,8 @@ class UserManager:
             if user_details.reset_password is not None:
                 existing_user.reset_password = user_details.reset_password
             if user_details.active is not None:
-                if user_details.active.lower() == 'true':
-                    existing_user.active = True
-                else:
-                    existing_user.active = False
-
+                existing_user.active = user_details.active
+                
             existing_user.modify_date = dt.datetime.now(tz=dt.timezone.utc)
 
             session.add(existing_user)
