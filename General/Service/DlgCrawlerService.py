@@ -218,7 +218,8 @@ class DlgCrawlerService:
             if parse_hint == "ocr_simple":
                 return self._extract_rows_with_simple_ocr(fetch, source.name, scrape_ts, rules, html_page_values or {}), ""
             if parse_hint == "pdf_table" or looks_like_pdf(fetch):
-                return extract_from_pdf(fetch), ""
+                # Use extract_from_pdf which now has a per-LSP conditional block
+                return extract_from_pdf(fetch, lsp_name=source.name, rules=rules), ""
             if parse_hint == "html_table":
                 return extract_from_html_tables(fetch, table_index=rules.get("table_index")), "None"
 
