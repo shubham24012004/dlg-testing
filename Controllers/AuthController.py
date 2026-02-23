@@ -5,8 +5,7 @@ from typing import Any
 
 from utils.logger_config import logger_method
 from utils.jwt_utils import create_jwt_token, token_required
-from General.Service.AuthService import AuthService
-from DatabaseOperation.DatabaseModels.master_models import UserInput
+from Service.AuthService import AuthService
 
 auth_bp = Blueprint('auth_bp', __name__)
 logger = logger_method(__name__)

@@ -3,11 +3,9 @@ from utils.constants import AuditAction, CrawlStatus, LSPType
 from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 from flask import request, jsonify, Blueprint
-import pandas as pd
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
+from datetime import datetime
 
-from General.Service.ReportsService import ReportsService
+from Service.ReportsService import ReportsService
 
 """Controller for Reports API operations."""
 

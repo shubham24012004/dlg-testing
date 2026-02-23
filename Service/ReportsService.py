@@ -1,9 +1,8 @@
 from typing import Optional, Any, Dict
-import datetime as dt
 
 from utils.logger_config import logger_method
-from General.Managers.ReportsManager import ReportsManager
-from General.Service.AuditLogService import AuditLogService
+from Managers.ReportsManager import ReportsManager
+from Service.AuditLogService import AuditLogService
 from utils.constants import AuditAction
 
 

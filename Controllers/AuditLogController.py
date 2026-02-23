@@ -1,11 +1,10 @@
 import datetime as dt
 from http import HTTPStatus
-from utils.constants import AuditAction
 from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 from flask import request, jsonify, Blueprint
 
-from General.Service.AuditLogService import AuditLogService
+from Service.AuditLogService import AuditLogService
 
 auditlog_bp = Blueprint('auditlog_bp', __name__)
 

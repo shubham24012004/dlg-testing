@@ -1,12 +1,11 @@
-import datetime as dt
 from http import HTTPStatus
 from flask import request, jsonify, Blueprint
-from typing import List, Optional, Tuple, Dict, Any
+from typing import Optional, Dict, Any
 from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 
-from General.Service.DlgCrawlerService import DlgCrawlerService
-from General.Service.LspMasterService import LSPMasterService
+from Service.DlgCrawlerService import DlgCrawlerService
+from Service.LspMasterService import LSPMasterService
 
 """User-facing entry point that wires inputs to the crawler manager."""
 crawler_bp = Blueprint('crawler_bp', __name__)

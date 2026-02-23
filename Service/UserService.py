@@ -1,9 +1,9 @@
 """Authentication service for user login and token management."""
 from typing import Optional, Tuple, Dict, Any
 from utils.logger_config import logger_method
-from General.Managers.UserManager import UserManager
-from General.Managers.AuthManager import AuthManager
-from General.Service.AuditLogService import AuditLogService
+from Managers.UserManager import UserManager
+from Managers.AuthManager import AuthManager
+from Service.AuditLogService import AuditLogService
 from DatabaseOperation.DatabaseModels.master_models import UserInput, UserUpdate
 from utils.constants import AuditAction, default_password
 

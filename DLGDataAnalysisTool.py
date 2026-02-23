@@ -14,13 +14,13 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from utils.logger_config import logger_method
 
-from General.Controllers.DlgCrawlerController import crawler_bp
-from General.Controllers.LSPMasterController import lsp_master_bp
-from General.Controllers.AuditLogController import auditlog_bp
-from General.Controllers.AuthController import auth_bp
-from General.Controllers.ReportsController import reports_bp
-from General.Controllers.DashboardController import dashboard_bp
-from General.Controllers.UserController import user_bp
+from Controllers.DlgCrawlerController import crawler_bp
+from Controllers.LSPMasterController import lsp_master_bp
+from Controllers.AuditLogController import auditlog_bp
+from Controllers.AuthController import auth_bp
+from Controllers.ReportsController import reports_bp
+from Controllers.DashboardController import dashboard_bp
+from Controllers.UserController import user_bp
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler

@@ -3,7 +3,7 @@ from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 from flask import request, jsonify, Blueprint
 
-from General.Service.LspMasterService import LSPMasterService
+from Service.LspMasterService import LSPMasterService
 from DatabaseOperation.DatabaseModels.master_models import LspMasterIp, LspMaster
 
 """Controller for API operations with business logic."""

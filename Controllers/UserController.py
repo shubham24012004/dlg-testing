@@ -4,8 +4,8 @@ from flask import Blueprint, request, jsonify
 from typing import Any
 
 from utils.logger_config import logger_method
-from utils.jwt_utils import create_jwt_token, token_required
-from General.Service.UserService import UserService
+from utils.jwt_utils import token_required
+from Service.UserService import UserService
 from DatabaseOperation.DatabaseModels.master_models import UserInput, UserUpdate
 from utils.constants import default_password
 

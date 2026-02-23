@@ -2,8 +2,8 @@ import datetime as dt
 from utils.logger_config import logger_method
 from typing import Any, Dict, List, Optional, Tuple
 from utils.simple_ocr_extractor import extract_simple
-from General.Service.AuditLogService import AuditLogService
-from General.Managers.DlgCrawlerManager import DlgCrawlerManager
+from Service.AuditLogService import AuditLogService
+from Managers.DlgCrawlerManager import DlgCrawlerManager
 from DatabaseOperation.DatabaseModels.master_models import FetchResult, LspMaster, DlgRaw
 from utils.constants import AuditAction, CrawlStatus
 
@@ -54,7 +54,7 @@ class DlgCrawlerService:
                         payload={"status": status.value, "details": error, "ts": scrape_started_at.isoformat()}
                     )
                 )
-                self.logger.info(f"[OK] {source.name} -> {status.value}")
+                self.logger.info(f"[OK] {source.name} -> {status.value}  -> {error}")
             except Exception as exc:
                 self.persist_error(source, scrape_started_at)
                 user_id = self.user_claims.get('username') if self.user_claims else "system"
@@ -150,6 +150,7 @@ class DlgCrawlerService:
             for dlg_row in dlg_rows:
                 dlg_row.lsp_id = source.id
                 dlg_row.lsp_name = source.name
+                dlg_row.dlg_url = source.dlg_url
             self.crawler_manager.append(dlg_rows)
             return
 
@@ -164,7 +165,8 @@ class DlgCrawlerService:
                 amount=None,
                 as_on_timestamp=None,
                 scrape_timestamp=scrape_ts,
-                complete=status.value
+                complete=status.value,
+                dlg_url=source.dlg_url if source.dlg_url is not None else "NA"
             )
             self.crawler_manager.append([row])
 
@@ -178,6 +180,7 @@ class DlgCrawlerService:
             scrape_timestamp=scrape_ts,
             complete=CrawlStatus.ERROR.value,
             lsp_id=source.id,
+            dlg_url=source.dlg_url if source.dlg_url is not None else "NA"
         )
         self.crawler_manager.append([row])
 

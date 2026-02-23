@@ -59,15 +59,17 @@ class ReportsManager:
                 "lsp_id": r.lsp_id,
                 "lsp_name": r.lsp_name,
                 "portfolio": r.portfolio,
+                "lender": r.lender,
                 "amount": r.amount,
                 "status": r.complete,
+                "dlg_url": r.dlg_url,
                 "as_on_timestamp": r.as_on_timestamp,
                 "scrape_timestamp": r.scrape_timestamp,
             })
 
         df = pd.DataFrame.from_records(records)
 
-        # ensure timestamps are datetimes
+        # ensure timestamps are datetime
         if "as_on_timestamp" in df.columns:
             df["as_on_timestamp"] = pd.to_datetime(df["as_on_timestamp"], errors="coerce")
         df["scrape_timestamp"] = pd.to_datetime(df["scrape_timestamp"], errors="coerce")
@@ -85,11 +87,11 @@ class ReportsManager:
             # If day < 8, it belongs to the previous month window
             if day < 8:
                 if month == 1:
-                    return (year - 1, 12)
+                    return year - 1, 12
                 else:
-                    return (year, month - 1)
+                    return year, month - 1
             else:
-                return (year, month)
+                return year, month
 
         df["month_window"] = df["scrape_timestamp"].apply(get_month_window)
 
@@ -105,11 +107,20 @@ class ReportsManager:
             if grp['status'].notna().any():
                 status = CrawlStatus(grp['status'].iloc[0])
 
+            dlg_url = None
+            if grp['dlg_url'].notna().any():
+                dlg_url = grp['dlg_url'].iloc[0]
+
             total_amount = float(grp["amount"].fillna(0.0).sum())
             if "portfolio" in grp.columns:
                 total_portfolios = int(grp["portfolio"].nunique(dropna=True))
             else:
                 total_portfolios = int(grp.shape[0])
+
+            if "lender" in grp.columns:
+                total_lenders = int(grp["lender"].nunique(dropna=True))
+            else:
+                total_lenders = int(grp.shape[0])
 
             last_scrape = None
             if grp["scrape_timestamp"].notna().any():
@@ -122,7 +133,7 @@ class ReportsManager:
             # Extract scrape_year and scrape_month from the month_window
             scrape_year = month_window[0]
             scrape_month = month_window[1]
-            
+
             if last_ason:
                 as_on_year = int(last_ason.year)
                 as_on_month = int(last_ason.month)
@@ -149,12 +160,14 @@ class ReportsManager:
                 "lsp_id": int(lsp_id),
                 "name": str(name),
                 "total_portfolios": total_portfolios,
+                "total_lenders": total_lenders,
                 "total_amount": total_amount,
                 "as_on_year": as_on_year,
                 "as_on_month": as_on_month,
                 "scrape_year": scrape_year,
                 "scrape_month": scrape_month,
-                "status": status.value,
+                "status": status,
+                "dlg_url": dlg_url,
                 "last_crawl_date": pd.to_datetime(last_scrape).to_pydatetime() if pd.notnull(last_scrape) else None,
             })
 
@@ -173,7 +186,14 @@ class ReportsManager:
                     existing.total_amount = s["total_amount"]
                     existing.as_on_year = s["as_on_year"]
                     existing.as_on_month = s["as_on_month"]
-                    existing.status = s["status"]
+                    existing.scrape_year = s["scrape_year"]
+                    existing.scrape_month = s["scrape_month"]                    
+                    if isinstance(s["status"], CrawlStatus):
+                        existing.status = s["status"].value
+                    else:
+                        existing.status = s["status"]
+                    existing.dlg_url = s["dlg_url"]
+                    existing.total_lenders = s["total_lenders"]
                     existing.last_crawl_date = s["last_crawl_date"]
                     session.add(existing)
                 else:
@@ -186,7 +206,9 @@ class ReportsManager:
                         as_on_month=s["as_on_month"],
                         scrape_year=s["scrape_year"],
                         scrape_month=s["scrape_month"],
-                        status=s["status"],
+                        status = s["status"].value,
+                        total_lenders=s["total_lenders"],
+                        dlg_url=s["dlg_url"],
                         last_crawl_date=s["last_crawl_date"],
                     )
                     session.add(rec)
@@ -205,7 +227,7 @@ class ReportsManager:
     def get_all_summaries(self, start_year: Optional[int] = None, end_year: Optional[int] = None,
                           start_month: Optional[int] = None, end_month: Optional[int] = None,
                           lsp_id: Optional[int] = None):
-        """Return all LspSummary row per `lsp_id` between the selected year and month).
+        """Return all LspSummary row per `lsp_id` between the selected year and month.
 
         Returns:
             (list_of_dicts, count)
@@ -234,6 +256,8 @@ class ReportsManager:
                         "as_on_month": r.as_on_month,
                         "scrape_year": r.scrape_year,
                         "scrape_month": r.scrape_month,
+                        "dlg_url": r.dlg_url,
+                        "total_lenders": r.total_lenders,
                         "status": r.status,
                         "last_crawl_date": r.last_crawl_date,
                     }
@@ -289,6 +313,8 @@ class ReportsManager:
                         "scrape_year": r.scrape_year,
                         "scrape_month": r.scrape_month,
                         "status": r.status,
+                        "dlg_url": r.dlg_url,
+                        "total_lenders": r.total_lenders,
                         "last_crawl_date": r.last_crawl_date,
                     }
                 )
@@ -318,6 +344,7 @@ class ReportsManager:
                     "amount": float(r.amount) if r.amount is not None else 0.0,
                     "as_on_timestamp": r.as_on_timestamp,
                     "scrape_timestamp": r.scrape_timestamp,
+                    "dlg_url": r.dlg_url,
                     "complete": r.complete,
                 })
             return result, count

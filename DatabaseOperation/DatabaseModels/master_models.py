@@ -55,6 +55,7 @@ class DlgRaw(Base):
     as_on_timestamp = Column(TIMESTAMP(timezone=True), nullable=True)
     scrape_timestamp = Column(TIMESTAMP(timezone=True))
     complete = Column(String)
+    dlg_url = Column(String)
 
 
 class AuditLog(Base):

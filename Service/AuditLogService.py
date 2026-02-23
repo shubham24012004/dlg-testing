@@ -4,7 +4,7 @@ from utils.logger_config import logger_method
 
 from DatabaseOperation.DatabaseModels.master_models import AuditLog
 from utils.constants import AuditAction
-from General.Managers.AuditLogManager import AuditLogManager
+from Managers.AuditLogManager import AuditLogManager
 
 
 class AuditLogService:

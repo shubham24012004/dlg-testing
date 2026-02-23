@@ -1,11 +1,10 @@
-import json
 from utils.logger_config import logger_method
 from typing import Optional, Any, List, Dict
 from DatabaseOperation.DatabaseModels.master_models import LspMaster, LspMasterIp
 from utils.constants import AuditAction
-from General.Managers.LspMasterManager import LspMasterManager
-from General.Service.AuditLogService import AuditLogService
-from General.Service.DisclosureUrlFinderService import DisclosureUrlFinderService
+from Managers.LspMasterManager import LspMasterManager
+from Service.AuditLogService import AuditLogService
+from Service.DisclosureUrlFinderService import DisclosureUrlFinderService
 
 
 class LSPMasterService:

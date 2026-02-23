@@ -5,7 +5,7 @@ import re
 import datetime as dt
 from typing import Iterable, Optional, Dict, Any
 from utils.logger_config import logger_method
-from General.Managers.AuditLogManager import AuditLogManager
+from Managers.AuditLogManager import AuditLogManager
 from DatabaseOperation.DatabaseModels.master_models import DlgRaw
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from utils.utils import parse_amount_any, parse_date_any, normalize_amount_to_crores
@@ -53,6 +53,7 @@ class DlgCrawlerManager:
                     "as_on_timestamp": row.as_on_timestamp,
                     "scrape_timestamp": row.scrape_timestamp,
                     "complete": row.complete,
+                    "dlg_url": row.dlg_url
                 }
                 
                 lsp_id = row.lsp_id
@@ -119,6 +120,7 @@ class DlgCrawlerManager:
                     as_on_timestamp=as_on_ts_parsed,
                     scrape_timestamp=scrape_ts,
                     complete=row.complete,
+                    dlg_url=row.dlg_url
                 )
                 # use merge to avoid identity-map collisions when detached/duplicate PKs are present
                 session.merge(db_row)
