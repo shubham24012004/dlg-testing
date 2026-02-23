@@ -313,8 +313,83 @@ def looks_like_pdf(fetch: FetchResult) -> bool:
     return ("application/pdf" in ct) or fetch.url.lower().endswith(".pdf")
 
 
-def extract_from_pdf(fetch: FetchResult) -> List[Dict[str, Any]]:
+def extract_from_pdf(fetch: FetchResult, lsp_name: Optional[str] = None, rules: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     try:
+        # Inline per-LSP conditional: handle Finsall specially to avoid external parser files
+        try:
+            page_rules = rules or {}
+        except Exception:
+            page_rules = {}
+
+        if lsp_name and lsp_name.lower().startswith('finsall') or (isinstance(page_rules, dict) and page_rules.get('parser') == 'finsall_v1'):
+            # Inline Finsall parsing: extract first page table and normalize rows
+            import io as _io
+            with pdfplumber.open(_io.BytesIO(fetch.body)) as _pdf:
+                _page = _pdf.pages[0]
+                _text = _page.extract_text() or ''
+                _date_m = re.search(r'Date of data as on ([0-9]{1,2}(?:st|nd|rd|th)? [A-Za-z]+,? ?[0-9]{4})', _text, flags=re.I)
+                _as_on_str = _date_m.group(1) if _date_m else None
+                _as_on = parse_date_any(_as_on_str) if _as_on_str else None
+                _tables = _page.extract_tables() or []
+                if not _tables:
+                    return []
+                _tbl = _tables[0]
+                out_rows: List[Dict[str, Any]] = []
+                for _row in _tbl:
+                    if not any(_cell for _cell in _row):
+                        continue
+                    _first = (_row[0] or '').strip() if _row[0] else ''
+                    _lender = (_row[2] or '').strip() if len(_row) > 2 and _row[2] else ''
+                    _amount_raw = _row[6] if len(_row) > 6 else None
+                    _amount = None
+                    if _amount_raw is not None:
+                        _m = re.search(r'([0-9]+(?:\.[0-9]+)?)', str(_amount_raw).replace(',', ''))
+                        if _m:
+                            try:
+                                _amount = float(_m.group(1))
+                            except Exception:
+                                _amount = None
+
+                    # skip headers/totals
+                    if _first.lower().startswith('sl') or (_lender and _lender.lower() == 'lender') or _first.upper() == 'TOTAL' or _first.lower().startswith('total'):
+                        continue
+
+                    if _lender and _amount is not None:
+                        out_rows.append({
+                            'Lender': _lender,
+                            'Portfolio': None,
+                            'Amount': _amount,
+                            'AsOnTimestamp': _as_on,
+                            'ScrapeTimestamp': None,
+                        })
+                        continue
+
+                    # salvage: try neighboring cols
+                    if _lender and _amount is None:
+                        for _c in (3,4,5,7,8):
+                            if len(_row) > _c and _row[_c]:
+                                _m = re.search(r'([0-9]+(?:\.[0-9]+)?)', str(_row[_c]).replace(',', ''))
+                                if _m:
+                                    try:
+                                        _v = float(_m.group(1))
+                                        out_rows.append({'Lender': _lender, 'Portfolio': None, 'Amount': _v, 'AsOnTimestamp': _as_on, 'ScrapeTimestamp': None})
+                                        break
+                                    except Exception:
+                                        pass
+                        continue
+
+                    if _amount is not None and not _lender:
+                        # look left for lender
+                        _found = None
+                        for _c in range(2, -1, -1):
+                            if len(_row) > _c and _row[_c]:
+                                val = str(_row[_c]).strip()
+                                if val and not val.isdigit():
+                                    _found = val
+                                    break
+                        out_rows.append({'Lender': _found or None, 'Portfolio': None, 'Amount': _amount, 'AsOnTimestamp': _as_on, 'ScrapeTimestamp': None})
+                return out_rows
+
         date_patterns = [
             # as of 1st Jan, 2025 (ordinal + month abbreviation with comma)
             r"as\s+of\s+(\d{1,2}(?:st|nd|rd|th)\s+[A-Za-z]+,?\s+\d{4})",
@@ -1472,7 +1547,9 @@ def normalize_rows(
                 portfolio_clean = rr.get("Portfolio")
                 # Apply amount normalization to pre-normalized rows too
                 normalized_amount = normalize_amount_to_crores(rr.get("Amount"))
-                ason = rr.get("AsOnTimestamp")
+                # Defensively parse ason: the inline per-LSP parsers may return a string or datetime
+                _ason_raw = rr.get("AsOnTimestamp")
+                ason = _ason_raw if isinstance(_ason_raw, dt.datetime) else parse_date_any(_ason_raw)
                 force_include = bool(rr.get("_force_include"))
             else:
                 # Row needs normalization
