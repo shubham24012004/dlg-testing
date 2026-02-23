@@ -6,7 +6,7 @@ from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.report_models import Base, LspSummary
 from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus
 from utils.logger_config import logger_method
-from sqlalchemy import func
+from sqlalchemy import and_, or_, func
 
 
 class ReportsManager:
@@ -187,7 +187,7 @@ class ReportsManager:
                     existing.as_on_year = s["as_on_year"]
                     existing.as_on_month = s["as_on_month"]
                     existing.scrape_year = s["scrape_year"]
-                    existing.scrape_month = s["scrape_month"]                    
+                    existing.scrape_month = s["scrape_month"]
                     if isinstance(s["status"], CrawlStatus):
                         existing.status = s["status"].value
                     else:
@@ -206,7 +206,7 @@ class ReportsManager:
                         as_on_month=s["as_on_month"],
                         scrape_year=s["scrape_year"],
                         scrape_month=s["scrape_month"],
-                        status = s["status"].value,
+                        status=s["status"].value,
                         total_lenders=s["total_lenders"],
                         dlg_url=s["dlg_url"],
                         last_crawl_date=s["last_crawl_date"],
@@ -226,7 +226,7 @@ class ReportsManager:
 
     def get_all_summaries(self, start_year: Optional[int] = None, end_year: Optional[int] = None,
                           start_month: Optional[int] = None, end_month: Optional[int] = None,
-                          lsp_id: Optional[int] = None):
+                          lsp_id: Optional[int] = None, status: Optional[str] = None):
         """Return all LspSummary row per `lsp_id` between the selected year and month.
 
         Returns:
@@ -238,14 +238,33 @@ class ReportsManager:
             query = session.query(LspSummary)
             if lsp_id:
                 query = query.filter(LspSummary.lsp_id == lsp_id)
+            
+            if status:
+                query = query.filter(LspSummary.status == status)
 
-            query = query.filter(start_year <= LspSummary.scrape_year).filter(
-                LspSummary.scrape_year <= end_year).filter(start_month <= LspSummary.scrape_month).filter(
-                LspSummary.scrape_month <= end_month)
+            query = query.filter(
+                and_(
+                    or_(
+                        LspSummary.scrape_year > start_year,
+                        and_(LspSummary.scrape_year == start_year, LspSummary.scrape_month >= start_month)
+                    ),
+                    or_(
+                        LspSummary.scrape_year < end_year,
+                        and_(LspSummary.scrape_year == end_year, LspSummary.scrape_month <= end_month)
+                    )
+                )
+            )
 
             rows = query.all()
             result = []
+            portfolios = 0
+            amount = 0
+            lenders = 0
             for r in rows:
+                portfolios = portfolios + r.total_portfolios
+                amt = float(r.total_amount) if r.total_amount is not None else 0.0                
+                amount = amount + amt
+                lenders = lenders + r.total_lenders
                 result.append(
                     {
                         "lsp_id": r.lsp_id,
@@ -262,14 +281,14 @@ class ReportsManager:
                         "last_crawl_date": r.last_crawl_date,
                     }
                 )
-            return result, len(result)
+            return result, len(result), portfolios, amount, lenders
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP summaries: {e}")
             raise
         finally:
             session.close()
 
-    def get_latest_summary(self):
+    def get_latest_summary(self, lsp_id: Optional[int] = None, status: Optional[str] = None):
         """Return one LspSummary row per `lsp_id` using the latest `last_crawl_date` (timestamp included).
 
         Returns:
@@ -299,9 +318,21 @@ class ReportsManager:
             # Query to select only the top-ranked row for each lsp_id
             query = session.query(subq).filter(subq.c.rn == 1).order_by(subq.c.lsp_id.asc())
 
+            if lsp_id is not None:
+                query = query.filter(subq.c.lsp_id == lsp_id)
+            if status is not None:
+                query = query.filter(subq.c.status == status)
+
             rows = query.all()
             result = []
+            portfolios = 0
+            amount = 0
+            lenders = 0
             for r in rows:
+                portfolios = portfolios + r.lsp_summary_total_portfolios
+                amt = float(r.lsp_summary_total_amount) if r.lsp_summary_total_amount is not None else 0.0
+                amount = amount + amt
+                lenders = lenders + r.lsp_summary_total_lenders
                 result.append(
                     {
                         "lsp_id": r.lsp_id,
@@ -318,24 +349,36 @@ class ReportsManager:
                         "last_crawl_date": r.last_crawl_date,
                     }
                 )
-            return result, len(result)
+            return result, len(result), portfolios, amount, lenders
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP summaries: {e}")
             raise
         finally:
             session.close()
 
-    def get_raw_data(self, lsp_id, page=None, per_page=None):
+    def get_raw_data(self, lsp_id, month, year, page=None, per_page=None):
         user_info = self._get_user_info()
         session = self.conn_factory.get_session()
         try:
             query = session.query(DlgRaw).filter(DlgRaw.lsp_id == lsp_id).order_by(DlgRaw.scrape_timestamp.desc())
+            if month is not None:
+                query = query.filter(DlgRaw.as_on_timestamp.month == month)
+            if year is not None:
+                query = query.filter(DlgRaw.as_on_timestamp.year == year)
+
             count = query.count()
             if page and per_page:
                 query = query.offset((page - 1) * per_page).limit(per_page)
             rows = query.all()
             result = []
+            portfolios = 0
+            amount = 0
+            lenders = 0
             for r in rows:
+                portfolios = portfolios + r.portfolio
+                amt = float(r.amount) if r.amount is not None else 0.0
+                amount = amount + amt
+                lenders = lenders + 1
                 result.append({
                     "lsp_id": r.lsp_id,
                     "lsp_name": r.lsp_name,
@@ -347,7 +390,7 @@ class ReportsManager:
                     "dlg_url": r.dlg_url,
                     "complete": r.complete,
                 })
-            return result, count
+            return result, count, portfolios, amount, lenders
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
             raise

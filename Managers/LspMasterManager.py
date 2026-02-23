@@ -1,6 +1,6 @@
 from typing import Optional, Any, Dict
 
-from sqlalchemy import asc, or_
+from sqlalchemy import asc, or_, and_
 
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.master_models import LspMaster, Base, DlgRaw
@@ -27,22 +27,30 @@ class LspMasterManager:
     def insert(self, lm: LspMaster) -> Any:
         session = self.conn_factory.get_session()
         try:
-            existing = session.query(LspMaster).filter_by(home_url=lm.home_url).one_or_none()
+            # Check for duplicate by name, or brand_name + (home_url + lsp_type)
+            existing = session.query(LspMaster).filter(
+                and_(
+                    or_(
+                        LspMaster.name == lm.name,
+                        LspMaster.brand_name == lm.brand_name,
+                        LspMaster.name == lm.brand_name,
+                        LspMaster.brand_name == lm.name,
+                        LspMaster.home_url == lm.home_url
+                    ),
+                    LspMaster.lsp_type == lm.lsp_type
+                )
+            ).one_or_none()
 
             if existing:
                 self.logger.error(f"{self._get_user_info()} LSP already exists")
                 return None
-            else:
-                existing = session.query(LspMaster).filter_by(name=lm.name).one_or_none()
-                if existing:
-                    self.logger.error(f"{self._get_user_info()} LSP already exists")
-                    return None
 
-                row = LspMaster(name=lm.name, brand_name=lm.brand_name, lsp_type=lm.lsp_type, home_url=lm.home_url,
-                                active=True, dlg_url=lm.dlg_url, parse_hint=lm.parse_hint, fetch_hint=lm.fetch_hint,
-                                rules_json=lm.rules_json)
-                session.add(row)
+            row = LspMaster(name=lm.name, brand_name=lm.brand_name, lsp_type=lm.lsp_type, home_url=lm.home_url,
+                            active=True, dlg_url=lm.dlg_url, parse_hint=lm.parse_hint, fetch_hint=lm.fetch_hint,
+                            rules_json=lm.rules_json)
+            session.add(row)
             session.commit()
+
             self.logger.info(f"{self._get_user_info()} {lm.name} LSP Added Successfully")
             result_dict = {"id": row.id, "name": row.name, "active": row.active, "home_url": row.home_url,
                            "dlg_url": row.dlg_url, "parse_hint": row.parse_hint, "fetch_hint": row.fetch_hint,
@@ -81,7 +89,7 @@ class LspMasterManager:
                     existing_lsp.brand_name = lm.brand_name
                 if lm.lsp_type is not None:
                     existing_lsp.lsp_type = lm.lsp_type
-                
+
                 existing_lsp.active = lm.active
                 # existing_lsp.rules_json = lm.rules_json
                 # existing_lsp.fetch_hint = lm.fetch_hint

@@ -27,14 +27,14 @@ def all_lsp_latest_summary():
     try:
         logger.info(f"{user_info} Getting LSP summaries for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count = reports_service.get_latest_summary()
+        result, count, portfolio_count, amount, lenders_count = reports_service.get_latest_summary()
 
         logger.info(f"{user_info} Get LSP summaries completed: {count} rows returned")
         return jsonify({
             "status": HTTPStatus.OK,
             "message": "LSP summarization completed successfully",
             "user_info": user_info,
-            "data": {"result": result, "count": count}
+            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount, "lenders_count": lenders_count}
         }), HTTPStatus.OK
 
     except Exception as exc:
@@ -45,7 +45,7 @@ def all_lsp_latest_summary():
              "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@dashboard_bp.get("/api/dashboard/all_lsp_all_summary")
+@dashboard_bp.post("/api/dashboard/all_lsp_all_summary")
 @token_required
 def all_lsp_all_summary():
     """Get lsp_summary Table data."""
@@ -72,7 +72,7 @@ def all_lsp_all_summary():
 
         logger.info(f"{user_info} Getting All LSP summaries for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count = reports_service.get_all_summaries(start_year=start_year, end_year=end_year,
+        result, count, portfolio_count, amount, lenders_count = reports_service.get_all_summaries(start_year=start_year, end_year=end_year,
                                                           start_month=start_month, end_month=end_month, lsp_id=lsp_id)
 
         logger.info(f"{user_info} Get All LSP summaries completed: {count} rows returned")
@@ -80,7 +80,7 @@ def all_lsp_all_summary():
             "status": HTTPStatus.OK,
             "message": "LSP summarization completed successfully",
             "user_info": user_info,
-            "data": {"result": result, "count": count}
+            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount, "lenders_count": lenders_count}
         }), HTTPStatus.OK
 
     except Exception as exc:
@@ -111,14 +111,14 @@ def lsp_raw():
     try:
         logger.info(f"{user_info} Getting LSP raw data for LSP ID: {lsp_id} for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count = reports_service.get_raw_data(lsp_id)
+        result, count, portfolio_count, amount, lenders_count = reports_service.get_raw_data(lsp_id)
 
         logger.info(f"{user_info} Get LSP raw data completed: {count} rows returned for LSP ID: {lsp_id}")
         return jsonify({
             "status": HTTPStatus.OK,
             "message": "LSP raw data retrieval completed successfully",
             "user_info": user_info,
-            "data": {"result": result, "count": count}
+            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount, "lenders_count": lenders_count}
         }), HTTPStatus.OK
 
     except Exception as exc:
