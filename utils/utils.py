@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import io
 import json
@@ -6,7 +8,6 @@ import calendar
 from bs4 import BeautifulSoup
 from dateutil import parser as dateparser
 from typing import Any, Dict, List, Optional, Tuple
-from DatabaseOperation.DatabaseModels.master_models import FetchResult, CrawlStatus
 import pdfplumber
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -33,6 +34,7 @@ BROWSER_HEADERS = {
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=12))
 def fetch_with_requests(url: str, timeout: int = 40) -> FetchResult:
+    from DatabaseOperation.DatabaseModels.master_models import FetchResult
     r = requests.get(url, headers=BROWSER_HEADERS, timeout=timeout, allow_redirects=True)
     ct = r.headers.get("content-type", "") or ""
     return FetchResult(url=url, status_code=r.status_code, content_type=ct, body=r.content,
@@ -1366,6 +1368,7 @@ def normalize_rows(
         scrape_ts: dt.datetime,
         rules_json: Optional[str]
 ) -> Tuple[CrawlStatus, List[Dict[str, Any]], str]:
+    from DatabaseOperation.DatabaseModels.master_models import CrawlStatus
     rules = load_rules(rules_json)
     field_map = rules.get("field_map") or {}
     page_vals = page_level_values(fetch, rules)
@@ -1835,3 +1838,106 @@ def forward_fill_columns(rows: List[Dict[str, Any]], column_names: List[str]) ->
         rows = forward_fill_column(rows, column_name)
 
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Month-based URL promotion helpers (T-2 → T-1)
+# ---------------------------------------------------------------------------
+
+def subtract_months(dtobj: dt.datetime, months: int) -> dt.datetime:
+    """Return a datetime shifted back by `months` months, clamped to day 1."""
+    year = dtobj.year
+    month = dtobj.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    return dt.datetime(year=year, month=month, day=1)
+
+
+def parse_month_year_token(url: str) -> Optional[Tuple[int, int, str, re.Match]]:
+    """Find the first month+year token in a URL.
+
+    Returns (year, month, matched_token_str, re.Match) or None.
+    Handles formats: 'May2025', 'May-2025', 'May%2025', 'Dec25', '/2025/07/'.
+    """
+    # 1) named-month + year (short or full), optional separator
+    m = re.search(
+        r'(?P<month>(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May'
+        r'|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?'
+        r'|Nov(?:ember)?|Dec(?:ember)?))(?P<sep>[-_%20\s]??)(?P<year>\d{2,4})',
+        url, flags=re.IGNORECASE)
+    if m:
+        year_s = m.group('year')
+        year = int(year_s) if len(year_s) == 4 else 2000 + int(year_s)
+        try:
+            month = dt.datetime.strptime(m.group('month')[:3].title(), '%b').month
+        except Exception:
+            month = None
+        return year, month, m.group(0), m
+
+    # 2) numeric year/month like /2025/07/
+    m2 = re.search(r'(?P<year>20\d{2})[^0-9]{0,3}(?P<month>0?[1-9]|1[0-2])', url)
+    if m2:
+        return int(m2.group('year')), int(m2.group('month')), m2.group(0), m2
+
+    # 3) short-name + 2-digit year like Dec25
+    m3 = re.search(
+        r'(?P<month>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+        r'(?P<year>\d{2})(?:\D|$)', url, flags=re.IGNORECASE)
+    if m3:
+        year = 2000 + int(m3.group('year'))
+        try:
+            month = dt.datetime.strptime(m3.group('month')[:3].title(), '%b').month
+        except Exception:
+            month = None
+        return year, month, m3.group(0), m3
+
+    return None
+
+
+def build_replacement_token(orig_token: str, orig_match: re.Match,
+                            new_year: int, new_month: int) -> str:
+    """Build a replacement month+year token that preserves the original formatting."""
+    m = re.search(r'(?P<month_name>[A-Za-z]{3,9})', orig_token)
+    if m:
+        month_name = m.group('month_name')
+        if month_name.islower():
+            mn = dt.datetime(new_year, new_month, 1).strftime('%B').lower()
+        elif month_name.isupper():
+            mn = dt.datetime(new_year, new_month, 1).strftime('%B').upper()
+        elif len(month_name) == 3:
+            mn = dt.datetime(new_year, new_month, 1).strftime('%b')
+        else:
+            mn = dt.datetime(new_year, new_month, 1).strftime('%B')
+        y_m = re.search(r'(\d{2,4})', orig_token)
+        ystr = str(new_year) if (y_m and len(y_m.group(1)) == 4) else str(new_year)[2:]
+        sep = orig_match.groupdict().get('sep') or ''
+        return f"{mn}{sep}{ystr}"
+
+    mnum = re.search(r'(?P<y>20\d{2})[^0-9]{0,3}(?P<m>0?[1-9]|1[0-2])', orig_token)
+    if mnum:
+        newtok = re.sub(r'20\d{2}', str(new_year), orig_token, count=1)
+        newtok = re.sub(r'(0?[1-9]|1[0-2])', f'{new_month:02d}', newtok, count=1)
+        return newtok
+
+    return dt.datetime(new_year, new_month, 1).strftime('%b') + str(new_year)
+
+
+def head_checks_pdf(url: str, timeout: int = 20) -> bool:
+    """Return True if `url` resolves to a PDF (HEAD then small GET fallback)."""
+    try:
+        h = requests.head(url, allow_redirects=True, timeout=timeout,
+                          headers={"User-Agent": BROWSER_USER_AGENT})
+        ct = (h.headers.get('content-type') or '').lower()
+        if h.status_code == 200 and 'application/pdf' in ct:
+            return True
+        g = requests.get(url, stream=True, timeout=timeout,
+                         headers={"User-Agent": BROWSER_USER_AGENT},
+                         allow_redirects=True)
+        if g.status_code == 200:
+            chunk = g.raw.read(8) if hasattr(g.raw, 'read') else g.content[:8]
+            if chunk.startswith(b'%PDF-'):
+                return True
+    except Exception:
+        pass
+    return False
