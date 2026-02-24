@@ -72,7 +72,7 @@ def all_lsp_all_summary():
 
         logger.info(f"{user_info} Getting All LSP summaries for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count, portfolio_count, amount, lenders_count = reports_service.get_all_summaries(start_year=start_year, end_year=end_year,
+        result, count = reports_service.get_all_summaries(start_year=start_year, end_year=end_year,
                                                           start_month=start_month, end_month=end_month, lsp_id=lsp_id)
 
         logger.info(f"{user_info} Get All LSP summaries completed: {count} rows returned")
@@ -80,7 +80,7 @@ def all_lsp_all_summary():
             "status": HTTPStatus.OK,
             "message": "LSP summarization completed successfully",
             "user_info": user_info,
-            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount, "lenders_count": lenders_count}
+            "data": {"result": result, "count": count}
         }), HTTPStatus.OK
 
     except Exception as exc:

@@ -4,7 +4,7 @@ import pandas as pd
 
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.report_models import Base, LspSummary
-from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus
+from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus, LspMaster
 from utils.logger_config import logger_method
 from sqlalchemy import and_, or_, func
 
@@ -235,7 +235,22 @@ class ReportsManager:
         user_info = self._get_user_info()
         session = self.conn_factory.get_session()
         try:
-            query = session.query(LspSummary)
+            query = session.query(
+                LspSummary.lsp_id.label("lsp_id"),
+                LspSummary.name.label("name"),
+                LspSummary.scrape_month.label("scrape_month"),
+                LspSummary.scrape_year.label("scrape_year"),
+                LspSummary.as_on_month.label("as_on_month"),
+                LspSummary.as_on_year.label("as_on_year"),
+                LspSummary.total_portfolios.label("total_portfolios"),
+                LspSummary.total_amount.label("total_amount"),
+                LspSummary.dlg_url.label("dlg_url"),
+                LspSummary.total_lenders.label("total_lenders"),
+                LspSummary.status.label("status"),
+                LspSummary.last_crawl_date.label("last_crawl_date"),
+                LspMaster.brand_name.label("brand_name")
+            ).join(LspMaster, LspSummary.lsp_id == LspMaster.id)
+
             if lsp_id:
                 query = query.filter(LspSummary.lsp_id == lsp_id)
             
@@ -257,18 +272,12 @@ class ReportsManager:
 
             rows = query.all()
             result = []
-            portfolios = 0
-            amount = 0
-            lenders = 0
             for r in rows:
-                portfolios = portfolios + r.total_portfolios
-                amt = float(r.total_amount) if r.total_amount is not None else 0.0                
-                amount = amount + amt
-                lenders = lenders + r.total_lenders
                 result.append(
                     {
                         "lsp_id": r.lsp_id,
                         "name": r.name,
+                        "brand_name": r.brand_name,
                         "total_portfolios": r.total_portfolios,
                         "total_amount": float(r.total_amount) if r.total_amount is not None else 0.0,
                         "as_on_year": r.as_on_year,
@@ -281,7 +290,7 @@ class ReportsManager:
                         "last_crawl_date": r.last_crawl_date,
                     }
                 )
-            return result, len(result), portfolios, amount, lenders
+            return result, len(result)
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP summaries: {e}")
             raise
@@ -300,7 +309,18 @@ class ReportsManager:
             # Subquery to rank summaries by last_crawl_date descending for each lsp_id
             subq = (
                 session.query(
-                    LspSummary,
+                    LspSummary.lsp_id.label("lsp_id"),
+                    LspSummary.name.label("name"),
+                    LspSummary.scrape_month.label("scrape_month"),
+                    LspSummary.scrape_year.label("scrape_year"),
+                    LspSummary.as_on_month.label("as_on_month"),
+                    LspSummary.as_on_year.label("as_on_year"),
+                    LspSummary.total_portfolios.label("total_portfolios"),
+                    LspSummary.total_amount.label("total_amount"),
+                    LspSummary.dlg_url.label("dlg_url"),
+                    LspSummary.total_lenders.label("total_lenders"),
+                    LspSummary.status.label("status"),
+                    LspSummary.last_crawl_date.label("last_crawl_date"),
                     func.row_number()
                     .over(
                         partition_by=LspSummary.lsp_id,
@@ -316,7 +336,9 @@ class ReportsManager:
             )
 
             # Query to select only the top-ranked row for each lsp_id
-            query = session.query(subq).filter(subq.c.rn == 1).order_by(subq.c.lsp_id.asc())
+            query = session.query(subq, LspMaster.brand_name.label("brand_name")).join(
+                LspMaster, subq.c.lsp_id == LspMaster.id
+            ).filter(subq.c.rn == 1).order_by(subq.c.lsp_id.asc())
 
             if lsp_id is not None:
                 query = query.filter(subq.c.lsp_id == lsp_id)
@@ -329,14 +351,15 @@ class ReportsManager:
             amount = 0
             lenders = 0
             for r in rows:
-                portfolios = portfolios + r.lsp_summary_total_portfolios
-                amt = float(r.lsp_summary_total_amount) if r.lsp_summary_total_amount is not None else 0.0
+                portfolios = portfolios + r.total_portfolios
+                amt = float(r.total_amount) if r.total_amount is not None else 0.0
                 amount = amount + amt
-                lenders = lenders + r.lsp_summary_total_lenders
+                lenders = lenders + r.total_lenders
                 result.append(
                     {
                         "lsp_id": r.lsp_id,
                         "name": r.name,
+                        "brand_name": r.brand_name,
                         "total_portfolios": r.total_portfolios,
                         "total_amount": float(r.total_amount) if r.total_amount is not None else 0.0,
                         "as_on_year": r.as_on_year,

@@ -93,13 +93,13 @@ class ReportsService:
         """
         user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
         try:
-            result, count, portfolio_count, amount, lenders_count = self.reports_manager.get_all_summaries(start_year=start_year,
+            result, count = self.reports_manager.get_all_summaries(start_year=start_year,
                                                                    end_year=end_year,
                                                                    start_month=start_month,
                                                                    end_month=end_month,
                                                                    lsp_id=lsp_id)
             self.logger.info(f"{user_info} Fetched {count} summary rows")
-            return result, count, portfolio_count, amount, lenders_count
+            return result, count
         except Exception as exc:
             self.logger.exception(f"{user_info} Error fetching summaries: {exc}")
             raise

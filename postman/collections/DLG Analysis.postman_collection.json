@@ -33,7 +33,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTQ4Nzk1MSwiZXhwIjoxNzcxNTc0MzUxLCJyb2xlIjoiYWRtaW4ifQ.O4f3nSwZIc-VJK6lpgxmCDIEvHpda3-Tu1brET7G_pY",
                   "type": "string"
                 }
               ]
@@ -50,7 +50,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/lsp_master?lsp_id=35",
+              "raw": "http://127.0.0.1:5000/api/lsp_master?active=True",
               "protocol": "http",
               "host": [
                 "127",
@@ -65,8 +65,8 @@
               ],
               "query": [
                 {
-                  "key": "lsp_id",
-                  "value": "35"
+                  "key": "active",
+                  "value": "True"
                 }
               ]
             },
@@ -97,16 +97,16 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MzA2NjM5OCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTUxNTI0NSwiZXhwIjoxNzY5NjAxNjQ1LCJyb2xlIjoiYWRtaW4ifQ.qgH7JZ03cZtK8NmTM2OPOG_JVuqMLVZm8DEmEFjKXiw",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTQ4Nzk1MSwiZXhwIjoxNzcxNTc0MzUxLCJyb2xlIjoiYWRtaW4ifQ.O4f3nSwZIc-VJK6lpgxmCDIEvHpda3-Tu1brET7G_pY",
                   "type": "string"
                 }
               ]
             },
-            "method": "GET",
+            "method": "POST",
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"active\": true,\r\n    \"page\": 1,\r\n    \"per_page\": 1,\r\n    \"lsp_id\": 10\r\n}",
+              "raw": "{\r\n    \"home_url\": \"https://www.fibe.in/\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -114,7 +114,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/get_dlg_url?lsp_id=5",
+              "raw": "http://127.0.0.1:5000/api/dlg_url",
               "protocol": "http",
               "host": [
                 "127",
@@ -125,13 +125,7 @@
               "port": "5000",
               "path": [
                 "api",
-                "get_dlg_url"
-              ],
-              "query": [
-                {
-                  "key": "lsp_id",
-                  "value": "5"
-                }
+                "dlg_url"
               ]
             },
             "description": "This is a GET request and it is used to \"get\" data from an endpoint. There is no request body for a GET request, but you can use query parameters to help specify the resource you want data on (e.g., in this request, we have `id=1`).\n\nA successful GET response will have a `200 OK` status, and should include some kind of response body - for example, HTML web content or JSON data."
@@ -162,7 +156,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTgzNzgwNSwiZXhwIjoxNzcxOTI0MjA1LCJyb2xlIjoiYWRtaW4ifQ.cJyTOW3DBtRSWjF9cS3jIv6cIBdTlI-_RHtgxq6LxN4",
                   "type": "string"
                 }
               ]
@@ -171,7 +165,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n\t\"lsp_name\": \"Fibe\",\n    \"lsp_home_url\": \"https://www.fibe.in/\",\n    \"brand_name\": \"Social Worth Technologies Pvt Ltd\",\n    \"lsp_type\": \"Lending techs with in-house NBFC\"\n\n}",
+              "raw": "{\n\t\"lsp_name\": \"TNew Test\",\n    \"lsp_home_url\": \"https://www.test.in/\",\n    \"brand_name\": \"New Test\",\n    \"lsp_type\": \"Lending techs with in-house NBFC\"\n\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -221,7 +215,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MDQ5ODA4MCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDg4MzUwMCwiZXhwIjoxNzcwOTY5OTAwLCJyb2xlIjoiYWRtaW4ifQ.PGCy2dNCUuU4V0z3VOcA8qlCrVCRGIMCMRSRycilFic",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTQxNzUyMiwiZXhwIjoxNzcxNTAzOTIyLCJyb2xlIjoiYWRtaW4ifQ.FjL6ySHYjBI7DxUhT8FfQNOMr75XA44SckrdqwNO47g",
                   "type": "string"
                 }
               ]
@@ -230,7 +224,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"id\": 66,\n\t\"name\": \"Fibe\",\n    \"home_url\": \"https://www.fibe.in/\",\n    \"brand_name\": \"Social Worth Technologies Pvt Ltd\",\n    \"lsp_type\": \"Lending techs with in-house NBFC\",\n    \"dlg_url\": \"\"\n\n}",
+              "raw": "{\n    \"id\": 66,\n\t\"name\": \"Fibe\",\n    \"home_url\": \"https://www.fibe.in/\",\n    \"brand_name\": \"Social Worth Technologies Pvt Ltd\",\n    \"lsp_type\": \"Lending techs with in-house NBFC\",\n    \"dlg_url\": \"\",\n    \"active\": \"True\"\n\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -329,7 +323,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMTA5MzA5NiwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MTIzNTM5MiwiZXhwIjoxNzcxMzIxNzkyLCJyb2xlIjoiYWRtaW4ifQ.kyGhlepd-jXm7Ltn0rOFSKS0kI14I_XCO7HZiiiFB3w",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTgzNzgwNSwiZXhwIjoxNzcxOTI0MjA1LCJyb2xlIjoiYWRtaW4ifQ.cJyTOW3DBtRSWjF9cS3jIv6cIBdTlI-_RHtgxq6LxN4",
                   "type": "string"
                 }
               ]
@@ -346,7 +340,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/scrape?lsp_id=67",
+              "raw": "http://127.0.0.1:5000/api/scrape?lsp_id=38",
               "protocol": "http",
               "host": [
                 "127",
@@ -362,7 +356,7 @@
               "query": [
                 {
                   "key": "lsp_id",
-                  "value": "67"
+                  "value": "38"
                 }
               ]
             }
@@ -436,7 +430,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1MzA2NjM5OCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTUxNTI0NSwiZXhwIjoxNzY5NjAxNjQ1LCJyb2xlIjoiYWRtaW4ifQ.qgH7JZ03cZtK8NmTM2OPOG_JVuqMLVZm8DEmEFjKXiw",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTQ4Nzk1MSwiZXhwIjoxNzcxNTc0MzUxLCJyb2xlIjoiYWRtaW4ifQ.O4f3nSwZIc-VJK6lpgxmCDIEvHpda3-Tu1brET7G_pY",
                   "type": "string"
                 }
               ]
@@ -453,7 +447,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:5000/api/auditlog?page_size=20",
+              "raw": "http://127.0.0.1:5000/api/auditlog?action=UPDATE_LSP",
               "protocol": "http",
               "host": [
                 "127",
@@ -468,8 +462,8 @@
               ],
               "query": [
                 {
-                  "key": "page_size",
-                  "value": "20"
+                  "key": "action",
+                  "value": "UPDATE_LSP"
                 }
               ]
             }
@@ -612,7 +606,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMDIxMTMyMywidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDgwMjA4MiwiZXhwIjoxNzcwODg4NDgyLCJyb2xlIjoiYWRtaW4ifQ.K75R_81vYUTXfHFUgSIm9ln4qU9cKkMYGnWX5r80IwY",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTgzNzgwNSwiZXhwIjoxNzcxOTI0MjA1LCJyb2xlIjoiYWRtaW4ifQ.cJyTOW3DBtRSWjF9cS3jIv6cIBdTlI-_RHtgxq6LxN4",
                   "type": "string"
                 }
               ]
@@ -621,7 +615,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"start_date\": \"15-12-2025\",\r\n    \"end_date\": \"15-02-2026\"\r\n}",
+              "raw": "{\r\n    \"start_date\": \"15-12-2025\",\r\n    \"end_date\": \"28-02-2026\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -654,25 +648,27 @@
       "item": [
         {
           "name": "Get All LSP Summary",
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          },
           "request": {
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMDIxMTMyMywidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc3MDgwMjA4MiwiZXhwIjoxNzcwODg4NDgyLCJyb2xlIjoiYWRtaW4ifQ.K75R_81vYUTXfHFUgSIm9ln4qU9cKkMYGnWX5r80IwY",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTkxMjU0MSwiZXhwIjoxNzcxOTk4OTQxLCJyb2xlIjoiYWRtaW4ifQ.rrnX4RFNm-Dch-ddwxFmata_R1EfhbEUc02jkTKnSq8",
                   "type": "string"
                 }
               ]
             },
-            "method": "GET",
+            "method": "POST",
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": ""
+              "raw": "{\r\n    \"start_year\": 2025,\r\n    \"end_year\": 2026,\r\n    \"start_month\": 12,\r\n    \"end_month\": 2,\r\n    \"lsp_id\": 34\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "http://127.0.0.1:5000/api/dashboard/all_lsp_all_summary",
@@ -704,7 +700,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyMDA4NjMzNCwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc2OTcwNjk1OCwiZXhwIjoxNzY5NzkzMzU4LCJyb2xlIjoiYWRtaW4ifQ.Cf4KbG89gf5Qz3jRn3-VHYNZK-rmYadelLyebRuSmvw",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluQGVtYWlsLmNvbSIsImlhdCI6MTc3MTkxMjU0MSwiZXhwIjoxNzcxOTk4OTQxLCJyb2xlIjoiYWRtaW4ifQ.rrnX4RFNm-Dch-ddwxFmata_R1EfhbEUc02jkTKnSq8",
                   "type": "string"
                 }
               ]
