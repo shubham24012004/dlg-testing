@@ -101,17 +101,19 @@ def lsp_raw():
     user_role = user_claims.get('role', 'unknown')
     user_info = f"[User: {username}, Role: {user_role}]"
     lsp_id = request.args.get('lsp_id', type=int)
-    if lsp_id is None:
+    month = request.args.get('month', type=int)
+    year = request.args.get('year', type=int)
+    if lsp_id is None or month is None or year is None:
         return jsonify(
             {"status": HTTPStatus.BAD_REQUEST,
-             "message": "lsp_id query parameter is required",
+             "message": "lsp_id, month, and year query parameters are required",
              "user_info": user_info
              }), HTTPStatus.BAD_REQUEST
 
     try:
         logger.info(f"{user_info} Getting LSP raw data for LSP ID: {lsp_id} for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count, portfolio_count, amount, lenders_count = reports_service.get_raw_data(lsp_id)
+        result, count, portfolio_count, amount, lenders_count = reports_service.get_raw_data(lsp_id, month=month, year=year)
 
         logger.info(f"{user_info} Get LSP raw data completed: {count} rows returned for LSP ID: {lsp_id}")
         return jsonify({
@@ -128,6 +130,53 @@ def lsp_raw():
              "message": f"Error during LSP raw data retrieval for LSP ID: {lsp_id}: {str(exc)}",
              "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
 
+
+@dashboard_bp.post("/api/dashboard/lsp_summary_graph")
+@token_required
+def get_summary_for_graph():
+    """Get lsp_summary Table data for a specific LSP ID for graphing."""
+
+    user_claims = request.user_claims
+    username = user_claims['username']
+    user_role = user_claims.get('role', 'unknown')
+    user_info = f"[User: {username}, Role: {user_role}]"    
+    
+    try:
+        start_year = datetime.now().year - 1
+        end_year = datetime.now().year
+        start_month = 1
+        end_month = 12
+        status = None
+        lsp_id = None
+        payload = request.get_json(silent=True)
+
+        if payload:
+            start_year = payload.get('start_year')
+            end_year = payload.get('end_year')
+            start_month = payload.get('start_month')
+            end_month = payload.get('end_month')
+            lsp_id =  payload.get('lsp_id')
+            status = payload.get('status')
+
+        logger.info(f"{user_info} Getting LSP summary data for graphing for LSP ID: {lsp_id} for Dashboard")
+        reports_service = ReportsService(user_claims)
+        result, count = reports_service.get_summary_for_graph(lsp_id,status, start_year=start_year, end_year=end_year,
+                                                              start_month=start_month, end_month=end_month)
+
+        logger.info(f"{user_info} Get LSP summary data for graphing completed: {count} rows returned for LSP ID: {lsp_id}")
+        return jsonify({
+            "status": HTTPStatus.OK,
+            "message": "LSP summary data retrieval for graphing completed successfully",
+            "user_info": user_info,
+            "data": {"result": result, "count": count}
+        }), HTTPStatus.OK
+
+    except Exception as exc:
+        logger.critical(f"{user_info} Error during Get LSP summary data for graphing for LSP ID: {lsp_id}: {str(exc)}", exc_info=True)
+        return jsonify(
+            {"status": HTTPStatus.INTERNAL_SERVER_ERROR,
+             "message": f"Error during LSP summary data retrieval for graphing for LSP ID: {lsp_id}: {str(exc)}",
+             "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @dashboard_bp.get("/api/dashboard/enums")
 def get_enums():
