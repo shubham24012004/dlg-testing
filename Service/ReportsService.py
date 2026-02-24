@@ -104,7 +104,7 @@ class ReportsService:
             self.logger.exception(f"{user_info} Error fetching summaries: {exc}")
             raise
     
-    def get_raw_data(self, lsp_id: int):
+    def get_raw_data(self, lsp_id: int, month: Optional[int] = None, year: Optional[int] = None):
         """Fetch LSP raw data from ReportsManager for a specific LSP ID.
 
         Returns:
@@ -112,9 +112,26 @@ class ReportsService:
         """
         user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
         try:
-            result, count, portfolio_count, amount, lenders_count = self.reports_manager.get_raw_data(lsp_id)
+            result, count, portfolio_count, amount, lenders_count = self.reports_manager.get_raw_data(lsp_id, month=month, year=year)
             self.logger.info(f"{user_info} Fetched {count} raw rows for LSP ID: {lsp_id}")
             return result, count, portfolio_count, amount, lenders_count
         except Exception as exc:
             self.logger.exception(f"{user_info} Error fetching raw data for LSP ID {lsp_id}: {exc}")
+            raise
+
+    def get_summary_for_graph(self, lsp_id: int, start_year: Optional[int] = None, end_year: Optional[int] = None,
+                              start_month: Optional[int] = None, end_month: Optional[int] = None, status: Optional[str] = None):
+        """Fetch LSP summary data for graphing from ReportsManager for a specific LSP ID.
+
+        Returns:
+            (list_of_dicts, count)
+        """
+        user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
+        try:
+            result, count = self.reports_manager.get_summary_for_graph(lsp_id, start_year=start_year, end_year=end_year,
+                                                                       start_month=start_month, end_month=end_month, status=status)
+            self.logger.info(f"{user_info} Fetched {count} summary rows for graphing for LSP ID: {lsp_id}")
+            return result, count
+        except Exception as exc:
+            self.logger.exception(f"{user_info} Error fetching summary for graph for LSP ID {lsp_id}: {exc}")
             raise

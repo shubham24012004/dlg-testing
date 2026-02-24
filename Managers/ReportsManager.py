@@ -6,7 +6,7 @@ from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.report_models import Base, LspSummary
 from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus, LspMaster
 from utils.logger_config import logger_method
-from sqlalchemy import and_, or_, func
+from sqlalchemy import String, and_, or_, func, extract
 
 
 class ReportsManager:
@@ -354,7 +354,7 @@ class ReportsManager:
                 portfolios = portfolios + r.total_portfolios
                 amt = float(r.total_amount) if r.total_amount is not None else 0.0
                 amount = amount + amt
-                lenders = lenders + r.total_lenders
+                lenders = lenders + int(r.total_lenders) if r.total_lenders is not None else 0.0
                 result.append(
                     {
                         "lsp_id": r.lsp_id,
@@ -385,9 +385,9 @@ class ReportsManager:
         try:
             query = session.query(DlgRaw).filter(DlgRaw.lsp_id == lsp_id).order_by(DlgRaw.scrape_timestamp.desc())
             if month is not None:
-                query = query.filter(DlgRaw.as_on_timestamp.month == month)
+                query = query.filter(extract('month', DlgRaw.scrape_timestamp) == month)
             if year is not None:
-                query = query.filter(DlgRaw.as_on_timestamp.year == year)
+                query = query.filter(extract('year', DlgRaw.scrape_timestamp) == year)
 
             count = query.count()
             if page and per_page:
@@ -398,10 +398,12 @@ class ReportsManager:
             amount = 0
             lenders = 0
             for r in rows:
-                portfolios = portfolios + r.portfolio
+                if r.portfolio:
+                    portfolios = portfolios + 1
                 amt = float(r.amount) if r.amount is not None else 0.0
                 amount = amount + amt
-                lenders = lenders + 1
+                if r.lender:
+                    lenders = lenders + 1
                 result.append({
                     "lsp_id": r.lsp_id,
                     "lsp_name": r.lsp_name,
@@ -416,6 +418,47 @@ class ReportsManager:
             return result, count, portfolios, amount, lenders
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
+            raise
+        finally:
+            session.close()
+
+    def get_summary_for_graph(self, lsp_id=None, status=None, start_year=None, end_year=None, start_month=None, end_month=None):
+        """Return summary data for a given lsp_id and status, aggregated by month_year (e.g. "2023-08")."""
+        user_info = self._get_user_info()
+        session = self.conn_factory.get_session()
+        try:
+            query = session.query(
+                func.concat(LspSummary.scrape_year, "-", func.lpad(func.cast(LspSummary.scrape_month, String), 2, "0")).label("month_year"),
+                func.sum(LspSummary.total_amount).label("total_amount"),
+                func.sum(LspSummary.total_portfolios).label("total_portfolios"),
+                func.sum(LspSummary.total_lenders).label("total_lenders"),
+            ).group_by("month_year").order_by("month_year")
+
+            if lsp_id is not None:
+                query = query.filter(LspSummary.lsp_id == lsp_id)
+            if status is not None:
+                query = query.filter(LspSummary.status == status)
+            if start_year is not None:
+                query = query.filter(LspSummary.scrape_year >= start_year)
+            if end_year is not None:
+                query = query.filter(LspSummary.scrape_year <= end_year)
+            if start_month is not None:
+                query = query.filter(LspSummary.scrape_month >= start_month)
+            if end_month is not None:
+                query = query.filter(LspSummary.scrape_month <= end_month)
+
+            rows = query.all()
+            result = []
+            for r in rows:
+                result.append({
+                    "month_year": r.month_year,
+                    "total_amount": float(r.total_amount) if r.total_amount is not None else 0.0,
+                    "total_portfolios": int(r.total_portfolios) if r.total_portfolios is not None else 0,
+                    "total_lenders": int(r.total_lenders) if r.total_lenders is not None else 0,
+                })
+            return result
+        except Exception as e:
+            self.logger.exception(f"{user_info} Error fetching LSP summary for graph: {e}")
             raise
         finally:
             session.close()
