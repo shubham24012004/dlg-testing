@@ -7,6 +7,7 @@ from Managers.DlgCrawlerManager import DlgCrawlerManager
 from DatabaseOperation.DatabaseModels.master_models import FetchResult, LspMaster, DlgRaw
 from utils.constants import AuditAction, CrawlStatus
 
+from General.Managers.LspMasterManager import LspMasterManager
 from utils.utils import (
     extract_dlg_from_plain_text,
     extract_finsall_grand_total,
@@ -18,7 +19,11 @@ from utils.utils import (
     parse_date_any,
     fetch_with_requests,
     fetch_with_playwright,
-    render_url_to_pdf
+    render_url_to_pdf,
+    subtract_months,
+    parse_month_year_token,
+    build_replacement_token,
+    head_checks_pdf,
 )
 
 try:
@@ -40,6 +45,8 @@ class DlgCrawlerService:
 
     def run_scrape_sources(self, sources: List[LspMaster]) -> None:
         for source in sources:
+            # Promote T-2 month-based URL to T-1 before scraping if a newer PDF exists
+            self._maybe_promote_to_t1(source)
             scrape_started_at = dt.datetime.now(tz=dt.timezone.utc)
             try:
                 status, fetch_mode, content_type, normalized_rows, error = self.scrape_one(source)
@@ -194,6 +201,66 @@ class DlgCrawlerService:
             scrape_timestamp=data.get("ScrapeTimestamp"),
             complete=status
         )
+
+    # ------------------------------------------------------------------
+    # T-1 URL promotion
+    # ------------------------------------------------------------------
+    def _maybe_promote_to_t1(self, source: LspMaster) -> None:
+        """If source.dlg_url contains a month token at T-2, check whether
+        the equivalent T-1 URL exists as a valid PDF.  If so, update
+        source.dlg_url in-memory *and* persist the new URL to lsp_master
+        so the crawl (and all future crawls) use the fresh link.
+
+        The actual data extraction/persistence happens through the normal
+        crawl pipeline — no special casing needed here.
+        """
+        if not source.dlg_url:
+            return
+        parsed = parse_month_year_token(source.dlg_url)
+        if not parsed:
+            return
+        year, month, token, match = parsed
+        if month is None:
+            return
+
+        now = dt.datetime.now()
+        t_minus_2 = subtract_months(now, 2)
+        if year != t_minus_2.year or month != t_minus_2.month:
+            return
+
+        t_minus_1 = subtract_months(now, 1)
+        new_token = build_replacement_token(token, match, t_minus_1.year, t_minus_1.month)
+        candidate_url = source.dlg_url.replace(token, new_token, 1)
+
+        if candidate_url == source.dlg_url:
+            return
+
+        self.logger.info(
+            f"[T-1 check] {source.name}: candidate URL {candidate_url}"
+        )
+
+        if not head_checks_pdf(candidate_url):
+            self.logger.info(f"[T-1 check] {source.name}: candidate not a valid PDF — keeping current URL")
+            return
+
+        # Update in-memory so this crawl uses the new URL
+        source.dlg_url = candidate_url
+
+        # Persist to lsp_master so future crawls also use it
+        try:
+            lsp_mgr = LspMasterManager(self.user_claims)
+            lm_update = LspMaster()
+            lm_update.id = source.id
+            lm_update.dlg_url = candidate_url
+            lm_update.active = source.active
+            lsp_mgr.update(lm_update)
+            self.logger.info(
+                f"[T-1 check] {source.name}: promoted dlg_url to {candidate_url}"
+            )
+        except Exception as exc:
+            self.logger.warning(
+                f"[T-1 check] {source.name}: in-memory URL updated but DB update failed: {exc}"
+            )
 
     # ------------------------------------------------------------------
     # Fetching/parsing helpers
