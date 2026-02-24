@@ -224,9 +224,7 @@ class ReportsManager:
         finally:
             session.close()
 
-    def get_all_summaries(self, start_year: Optional[int] = None, end_year: Optional[int] = None,
-                          start_month: Optional[int] = None, end_month: Optional[int] = None,
-                          lsp_id: Optional[int] = None, status: Optional[str] = None):
+    def get_all_summaries(self, year: int, lsp_id: Optional[int] = None, status: Optional[str] = None):
         """Return all LspSummary row per `lsp_id` between the selected year and month.
 
         Returns:
@@ -251,24 +249,26 @@ class ReportsManager:
                 LspMaster.brand_name.label("brand_name")
             ).join(LspMaster, LspSummary.lsp_id == LspMaster.id)
 
+            query = query.filter(LspSummary.scrape_year == year)
+
             if lsp_id:
                 query = query.filter(LspSummary.lsp_id == lsp_id)
-            
+
             if status:
                 query = query.filter(LspSummary.status == status)
 
-            query = query.filter(
-                and_(
-                    or_(
-                        LspSummary.scrape_year > start_year,
-                        and_(LspSummary.scrape_year == start_year, LspSummary.scrape_month >= start_month)
-                    ),
-                    or_(
-                        LspSummary.scrape_year < end_year,
-                        and_(LspSummary.scrape_year == end_year, LspSummary.scrape_month <= end_month)
-                    )
-                )
-            )
+            # query = query.filter(
+            #     and_(
+            #         or_(
+            #             LspSummary.scrape_year > start_year,
+            #             and_(LspSummary.scrape_year == start_year, LspSummary.scrape_month >= start_month)
+            #         ),
+            #         or_(
+            #             LspSummary.scrape_year < end_year,
+            #             and_(LspSummary.scrape_year == end_year, LspSummary.scrape_month <= end_month)
+            #         )
+            #     )
+            # )
 
             rows = query.all()
             result = []
@@ -422,7 +422,7 @@ class ReportsManager:
         finally:
             session.close()
 
-    def get_summary_for_graph(self, lsp_id=None, status=None, start_year=None, end_year=None, start_month=None, end_month=None):
+    def get_summary_for_graph(self, year: int, lsp_id: Optional[int] = None, status: Optional[str] = None):
         """Return summary data for a given lsp_id and status, aggregated by month_year (e.g. "2023-08")."""
         user_info = self._get_user_info()
         session = self.conn_factory.get_session()
@@ -432,20 +432,16 @@ class ReportsManager:
                 func.sum(LspSummary.total_amount).label("total_amount"),
                 func.sum(LspSummary.total_portfolios).label("total_portfolios"),
                 func.sum(LspSummary.total_lenders).label("total_lenders"),
-            ).group_by("month_year").order_by("month_year")
+            )
+
+            query = query.filter(LspSummary.scrape_year == year)
 
             if lsp_id is not None:
                 query = query.filter(LspSummary.lsp_id == lsp_id)
             if status is not None:
                 query = query.filter(LspSummary.status == status)
-            if start_year is not None:
-                query = query.filter(LspSummary.scrape_year >= start_year)
-            if end_year is not None:
-                query = query.filter(LspSummary.scrape_year <= end_year)
-            if start_month is not None:
-                query = query.filter(LspSummary.scrape_month >= start_month)
-            if end_month is not None:
-                query = query.filter(LspSummary.scrape_month <= end_month)
+
+            query = query.group_by("month_year").order_by("month_year")
 
             rows = query.all()
             result = []
@@ -456,7 +452,7 @@ class ReportsManager:
                     "total_portfolios": int(r.total_portfolios) if r.total_portfolios is not None else 0,
                     "total_lenders": int(r.total_lenders) if r.total_lenders is not None else 0,
                 })
-            return result
+            return result, len(result)
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP summary for graph: {e}")
             raise

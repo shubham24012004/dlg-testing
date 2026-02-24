@@ -34,7 +34,8 @@ def all_lsp_latest_summary():
             "status": HTTPStatus.OK,
             "message": "LSP summarization completed successfully",
             "user_info": user_info,
-            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount, "lenders_count": lenders_count}
+            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount,
+                     "lenders_count": lenders_count}
         }), HTTPStatus.OK
 
     except Exception as exc:
@@ -56,24 +57,19 @@ def all_lsp_all_summary():
     user_info = f"[User: {username}, Role: {user_role}]"
 
     try:
-        start_year = datetime.now().year - 1
-        end_year = datetime.now().year
-        start_month = 1
-        end_month = 12
+        year = datetime.now().year
         lsp_id = None
+        status = None
         payload = request.get_json(silent=True)
 
         if payload:
-            start_year = payload.get('start_year')
-            end_year = payload.get('end_year')
-            start_month = payload.get('start_month')
-            end_month = payload.get('end_month')
-            lsp_id = payload.get('lsp_id')
+            year = payload.get('year', year)
+            lsp_id = payload.get('lsp_id', lsp_id)
+            status = payload.get('status', status)
 
         logger.info(f"{user_info} Getting All LSP summaries for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count = reports_service.get_all_summaries(start_year=start_year, end_year=end_year,
-                                                          start_month=start_month, end_month=end_month, lsp_id=lsp_id)
+        result, count = reports_service.get_all_summaries(year=year, lsp_id=lsp_id, status=status)
 
         logger.info(f"{user_info} Get All LSP summaries completed: {count} rows returned")
         return jsonify({
@@ -113,14 +109,16 @@ def lsp_raw():
     try:
         logger.info(f"{user_info} Getting LSP raw data for LSP ID: {lsp_id} for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count, portfolio_count, amount, lenders_count = reports_service.get_raw_data(lsp_id, month=month, year=year)
+        result, count, portfolio_count, amount, lenders_count = reports_service.get_raw_data(lsp_id, month=month,
+                                                                                             year=year)
 
         logger.info(f"{user_info} Get LSP raw data completed: {count} rows returned for LSP ID: {lsp_id}")
         return jsonify({
             "status": HTTPStatus.OK,
             "message": "LSP raw data retrieval completed successfully",
             "user_info": user_info,
-            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount, "lenders_count": lenders_count}
+            "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount,
+                     "lenders_count": lenders_count}
         }), HTTPStatus.OK
 
     except Exception as exc:
@@ -139,31 +137,25 @@ def get_summary_for_graph():
     user_claims = request.user_claims
     username = user_claims['username']
     user_role = user_claims.get('role', 'unknown')
-    user_info = f"[User: {username}, Role: {user_role}]"    
-    
+    user_info = f"[User: {username}, Role: {user_role}]"
+
     try:
-        start_year = datetime.now().year - 1
-        end_year = datetime.now().year
-        start_month = 1
-        end_month = 12
-        status = None
+        year = datetime.now().year
         lsp_id = None
+        status = None
         payload = request.get_json(silent=True)
 
         if payload:
-            start_year = payload.get('start_year')
-            end_year = payload.get('end_year')
-            start_month = payload.get('start_month')
-            end_month = payload.get('end_month')
-            lsp_id =  payload.get('lsp_id')
-            status = payload.get('status')
+            year = payload.get('year', year)
+            lsp_id = payload.get('lsp_id', lsp_id)
+            status = payload.get('status', status)
 
         logger.info(f"{user_info} Getting LSP summary data for graphing for LSP ID: {lsp_id} for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count = reports_service.get_summary_for_graph(lsp_id,status, start_year=start_year, end_year=end_year,
-                                                              start_month=start_month, end_month=end_month)
+        result, count = reports_service.get_summary_for_graph(lsp_id=lsp_id, status=status, year=year)
 
-        logger.info(f"{user_info} Get LSP summary data for graphing completed: {count} rows returned for LSP ID: {lsp_id}")
+        logger.info(
+            f"{user_info} Get LSP summary data for graphing completed: {count} rows returned for LSP ID: {lsp_id}")
         return jsonify({
             "status": HTTPStatus.OK,
             "message": "LSP summary data retrieval for graphing completed successfully",
@@ -172,11 +164,13 @@ def get_summary_for_graph():
         }), HTTPStatus.OK
 
     except Exception as exc:
-        logger.critical(f"{user_info} Error during Get LSP summary data for graphing for LSP ID: {lsp_id}: {str(exc)}", exc_info=True)
+        logger.critical(f"{user_info} Error during Get LSP summary data for graphing for LSP ID: {lsp_id}: {str(exc)}",
+                        exc_info=True)
         return jsonify(
             {"status": HTTPStatus.INTERNAL_SERVER_ERROR,
              "message": f"Error during LSP summary data retrieval for graphing for LSP ID: {lsp_id}: {str(exc)}",
              "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
+
 
 @dashboard_bp.get("/api/dashboard/enums")
 def get_enums():

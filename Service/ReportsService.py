@@ -83,9 +83,7 @@ class ReportsService:
             self.logger.exception(f"{user_info} Error fetching summaries: {exc}")
             raise
 
-    def get_all_summaries(self, start_year: Optional[int] = None, end_year: Optional[int] = None,
-                          start_month: Optional[int] = None, end_month: Optional[int] = None,
-                          lsp_id: Optional[int] = None):
+    def get_all_summaries(self, year: int, lsp_id: Optional[int] = None, status: Optional[str] = None):
         """Fetch LSP summaries from ReportsManager filtered by last_crawl_date.
 
         Returns:
@@ -93,11 +91,7 @@ class ReportsService:
         """
         user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
         try:
-            result, count = self.reports_manager.get_all_summaries(start_year=start_year,
-                                                                   end_year=end_year,
-                                                                   start_month=start_month,
-                                                                   end_month=end_month,
-                                                                   lsp_id=lsp_id)
+            result, count = self.reports_manager.get_all_summaries(year=year, lsp_id=lsp_id, status=status)
             self.logger.info(f"{user_info} Fetched {count} summary rows")
             return result, count
         except Exception as exc:
@@ -119,8 +113,7 @@ class ReportsService:
             self.logger.exception(f"{user_info} Error fetching raw data for LSP ID {lsp_id}: {exc}")
             raise
 
-    def get_summary_for_graph(self, lsp_id: int, start_year: Optional[int] = None, end_year: Optional[int] = None,
-                              start_month: Optional[int] = None, end_month: Optional[int] = None, status: Optional[str] = None):
+    def get_summary_for_graph(self, year: int, lsp_id: Optional[int] = None, status: Optional[str] = None):
         """Fetch LSP summary data for graphing from ReportsManager for a specific LSP ID.
 
         Returns:
@@ -128,8 +121,7 @@ class ReportsService:
         """
         user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
         try:
-            result, count = self.reports_manager.get_summary_for_graph(lsp_id, start_year=start_year, end_year=end_year,
-                                                                       start_month=start_month, end_month=end_month, status=status)
+            result, count = self.reports_manager.get_summary_for_graph(lsp_id=lsp_id, year=year, status=status)
             self.logger.info(f"{user_info} Fetched {count} summary rows for graphing for LSP ID: {lsp_id}")
             return result, count
         except Exception as exc:
