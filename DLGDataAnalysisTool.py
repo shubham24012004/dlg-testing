@@ -7,6 +7,7 @@ Clean architecture entrypoint:
 """
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 from dotenv import load_dotenv
@@ -14,13 +15,15 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from utils.logger_config import logger_method
 
-from Controllers.DlgCrawlerController import crawler_bp
+from Controllers.DlgCrawlerController import crawler_bp, run_scrape
 from Controllers.LSPMasterController import lsp_master_bp
 from Controllers.AuditLogController import auditlog_bp
 from Controllers.AuthController import auth_bp
 from Controllers.ReportsController import reports_bp
 from Controllers.DashboardController import dashboard_bp
 from Controllers.UserController import user_bp
+from Controllers.DlgRawController import dlg_raw_bp
+from Service.ReportsService import ReportsService
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -57,6 +60,35 @@ app.register_blueprint(crawler_bp)
 app.register_blueprint(reports_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(user_bp)
+app.register_blueprint(dlg_raw_bp)
+
+
+# ==================== Cron Tasks ====================
+
+def cron_run_all_scrapes() -> None:
+    """Cron task: trigger scrape for all active LSPs (no specific lsp_id)."""
+    logger.info("Cron: starting all-LSP scrape")
+    try:
+        count = run_scrape(lsp_id=0, user_claims=None)
+        logger.info(f"Cron: all-LSP scrape completed, {count} sources scraped")
+    except Exception as exc:
+        logger.error(f"Cron: all-LSP scrape failed: {exc}", exc_info=True)
+
+
+def cron_run_lsp_summarize() -> None:
+    """Cron task: run LSP summarization for the default date window
+    (15th of previous month → 15th of current month).
+    """
+    today = datetime.now()
+    start_dt = (today.replace(day=1) - timedelta(days=1)).replace(day=15)
+    end_dt = today
+    logger.info(f"Cron: starting LSP summarization {start_dt.date()} → {end_dt.date()}")
+    try:
+        reports_service = ReportsService(user_claims=None)
+        upserted = reports_service.run_lsp_summarize(start_dt, end_dt)
+        logger.info(f"Cron: LSP summarization completed, {upserted} rows upserted")
+    except Exception as exc:
+        logger.error(f"Cron: LSP summarization failed: {exc}", exc_info=True)
 
 
 # ==================== Health & Utility Endpoints ====================
@@ -78,17 +110,24 @@ def main() -> None:
 
         # Only start scheduler once (avoid Flask reloader double-start)
         if not settings.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-            cron_expr = os.getenv("DLG_CRON", "0 * * * *")  # Default: top of every hour
+            scrape_cron = os.getenv("DLG_CRON", "0 * * * *")          # Default: top of every hour
+            summarize_cron = os.getenv("DLG_SUMMARIZE_CRON", "0 1 15 * *")  # Default: 01:00 on the 15th of each month
             timezone = os.getenv("DLG_CRON_TZ", "UTC")
 
-            # scheduler = BackgroundScheduler(timezone=timezone)
-            # scheduler.add_job(
-            #     crawler_controller.run_scrape(),
-            #     CronTrigger.from_crontab(cron_expr)
-            # )
-            # scheduler.start()
+            scheduler = BackgroundScheduler(timezone=timezone)
+            scheduler.add_job(
+                cron_run_all_scrapes,
+                CronTrigger.from_crontab(scrape_cron, timezone=timezone)
+            )
+            scheduler.add_job(
+                cron_run_lsp_summarize,
+                CronTrigger.from_crontab(summarize_cron, timezone=timezone)
+            )
+            scheduler.start()
 
-            logger.info("Cron scheduler started: {0} ({0})", cron_expr, timezone)
+            logger.info(
+                f"Cron scheduler started: scrape='{scrape_cron}', summarize='{summarize_cron}' (tz={timezone})"
+            )
 
     # Run Flask server
     logger.info("Starting Flask server on {0}:{0}", settings.host, settings.port)
