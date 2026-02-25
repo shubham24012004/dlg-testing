@@ -106,3 +106,30 @@ class UserUpdate:
     lastname: Optional[str] = None
     reset_password: Optional[bool] = None
     active: Optional[bool] = None
+
+
+@dataclass
+class DlgRawInput:
+    lsp_id: int
+    lsp_name: Optional[str] = None
+    lender: Optional[str] = None
+    portfolio: Optional[str] = None
+    amount: Optional[float] = None
+    as_on_timestamp: Optional[str] = None
+    scrape_timestamp: Optional[str] = None
+    complete: Optional[str] = None
+    dlg_url: Optional[str] = None
+
+
+@dataclass
+class DlgRawUpdate:
+    id: int
+    lsp_id: Optional[int] = None
+    lsp_name: Optional[str] = None
+    lender: Optional[str] = None
+    portfolio: Optional[str] = None
+    amount: Optional[float] = None
+    as_on_timestamp: Optional[str] = None
+    scrape_timestamp: Optional[str] = None
+    complete: Optional[str] = None
+    dlg_url: Optional[str] = None
