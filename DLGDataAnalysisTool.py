@@ -110,8 +110,8 @@ def main() -> None:
 
         # Only start scheduler once (avoid Flask reloader double-start)
         if not settings.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-            scrape_cron = os.getenv("DLG_CRON", "0 * * * *")          # Default: top of every hour
-            summarize_cron = os.getenv("DLG_SUMMARIZE_CRON", "0 1 15 * *")  # Default: 01:00 on the 15th of each month
+            scrape_cron = os.getenv("DLG_CRON", "0 0 * * *")          # Default: top of every hour
+            summarize_cron = os.getenv("DLG_SUMMARIZE_CRON", "0 1 * * *")  # Default: 01:00 on the 15th of each month
             timezone = os.getenv("DLG_CRON_TZ", "UTC")
 
             scheduler = BackgroundScheduler(timezone=timezone)
