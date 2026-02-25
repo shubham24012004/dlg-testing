@@ -19,6 +19,9 @@ class AuditAction(Enum):
     URL_FINDER = "URL_FINDER"
     LSP_SUMMARY = "LSP_SUMMARY"
     CRAWL = "CRAWL"
+    INSERT_DLG_RAW = "INSERT_DLG_RAW"
+    UPDATE_DLG_RAW = "UPDATE_DLG_RAW"
+    DELETE_DLG_RAW = "DELETE_DLG_RAW"
 
 
 class CrawlStatus(Enum):

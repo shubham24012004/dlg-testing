@@ -1,10 +1,10 @@
 {
   "info": {
-    "_postman_id": "fc90fb5d-3906-4388-a57f-207f6ea578e6",
+    "_postman_id": "108e585c-7fc2-41c0-a4f1-d27abe9e4dda",
     "name": "DLG Analysis",
     "description": "# 🚀 Get started here\n\nThis template guides you through CRUD operations (GET, POST, PUT, DELETE), variables, and tests.\n\n## 🔖 **How to use this template**\n\n#### **Step 1: Send requests**\n\nRESTful APIs allow you to perform CRUD operations using the POST, GET, PUT, and DELETE HTTP methods.\n\nThis collection contains each of these [request](https://learning.postman.com/docs/sending-requests/requests/) types. Open each request and click \"Send\" to see what happens.\n\n#### **Step 2: View responses**\n\nObserve the response tab for status code (200 OK), response time, and size.\n\n#### **Step 3: Send new Body data**\n\nUpdate or add new data in \"Body\" in the POST request. Typically, Body data is also used in PUT request.\n\n```\n{\n    \"name\": \"Add your name in the body\"\n}\n\n ```\n\n#### **Step 4: Update the variable**\n\nVariables enable you to store and reuse values in Postman. We have created a [variable](https://learning.postman.com/docs/sending-requests/variables/) called `base_url` with the sample request [https://postman-api-learner.glitch.me](https://postman-api-learner.glitch.me). Replace it with your API endpoint to customize this collection.\n\n#### **Step 5: Add tests in the \"Scripts\" tab**\n\nAdding tests to your requests can help you confirm that your API is working as expected. You can write test scripts in JavaScript and view the output in the \"Test Results\" tab.\n\n<img src=\"https://content.pstmn.io/fa30ea0a-373d-4545-a668-e7b283cca343/aW1hZ2UucG5n\" alt=\"\" height=\"1530\" width=\"2162\">\n\n## 💪 Pro tips\n\n- Use folders to group related requests and organize the collection.\n    \n- Add more [scripts](https://learning.postman.com/docs/writing-scripts/intro-to-scripts/) to verify if the API works as expected and execute workflows.\n    \n\n## 💡Related templates\n\n[API testing basics](https://go.postman.co/redirect/workspace?type=personal&collectionTemplateId=e9a37a28-055b-49cd-8c7e-97494a21eb54&sourceTemplateId=ddb19591-3097-41cf-82af-c84273e56719)  \n[API documentation](https://go.postman.co/redirect/workspace?type=personal&collectionTemplateId=e9c28f47-1253-44af-a2f3-20dce4da1f18&sourceTemplateId=ddb19591-3097-41cf-82af-c84273e56719)  \n[Authorization methods](https://go.postman.co/redirect/workspace?type=personal&collectionTemplateId=31a9a6ed-4cdf-4ced-984c-d12c9aec1c27&sourceTemplateId=ddb19591-3097-41cf-82af-c84273e56719)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_exporter_id": "4484803"
+    "_exporter_id": "21840387"
   },
   "item": [
     {
@@ -40,15 +40,6 @@
             },
             "method": "GET",
             "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
             "url": {
               "raw": "http://127.0.0.1:5000/api/lsp_master?active=True",
               "protocol": "http",
@@ -533,7 +524,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"username\": \"admin@email.com\",\r\n    \"password\": \"newpassword\",\r\n    \"role\": \"admin\"\r\n}",
+              "raw": "{\r\n    \"username\": \"admin\",\r\n    \"password\": \"admin123\",\r\n    \"role\": \"admin\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1029,6 +1020,128 @@
                 "update-password"
               ]
             }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "DLG Raw",
+      "item": [
+        {
+          "name": "Add DLG Raw",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluIiwiaWF0IjoxNzcyMDA0NTc5LCJleHAiOjE3NzIwOTA5NzksInJvbGUiOiJhZG1pbiJ9.BcquzfHlX1pnEF4YCvNuKfuY6pGUBa0aXtHjN1mQOQc",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "lsp_id",
+                "value": "1",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "lender",
+                "value": "Example Lender",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "portfolio",
+                "value": "Example portfolio",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "amount",
+                "value": "132",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"lsp_id\": 1,\r\n    \"lender\": \"ExampleLender\",\r\n    \"portfolio\": \"ExamplePortfolio\",\r\n    \"amount\": 12345.67,\r\n    \"as_on_timestamp\": \"2025-01-31T00:00:00+00:00\",\r\n    \"dlg_url\": \"www.example.com\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/dlg_raw",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "dlg_raw"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update DLG Raw",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluIiwiaWF0IjoxNzcyMDA0NTc5LCJleHAiOjE3NzIwOTA5NzksInJvbGUiOiJhZG1pbiJ9.BcquzfHlX1pnEF4YCvNuKfuY6pGUBa0aXtHjN1mQOQc",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"id\": 3125,\r\n    \"amount\": 1021\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:5000/api/dlg_raw",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "dlg_raw"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete DLG Raw",
+          "request": {
+            "method": "GET",
+            "header": []
           },
           "response": []
         }
