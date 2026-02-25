@@ -8,9 +8,12 @@ from utils.jwt_utils import token_required
 from Service.UserService import UserService
 from DatabaseOperation.DatabaseModels.master_models import UserInput, UserUpdate
 from utils.constants import default_password
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 user_bp = Blueprint('user_bp', __name__)
 logger = logger_method(__name__)
+limiter = Limiter(key_func=get_remote_address, default_limits=["10 per minute"])
 
 
 @user_bp.post("/api/user")
@@ -159,6 +162,7 @@ def update_user() -> Any:
 
 @user_bp.post("/api/user/update-password")
 @token_required
+@limiter.limit("5 per minute")
 def update_password() -> Any:
     """Reset user password.
     
@@ -197,7 +201,8 @@ def update_password() -> Any:
 
         # Reset password
         user_service = UserService(user_claims)
-        success, error = user_service.set_password(username, new_password, reset_password=False)
+        hashed_password = user_service.auth_manager.hash_password(new_password)
+        success, error = user_service.set_password(username, hashed_password, reset_password=False)
 
         if not success:
             logger.warning(f"{user_info} Failed to reset password for user {username}: {error}")
@@ -225,6 +230,7 @@ def update_password() -> Any:
 
 
 @user_bp.post("/api/user/reset-password")
+@limiter.limit("5 per minute")
 def reset_password() -> Any:
     """Reset user password.
 
@@ -256,7 +262,9 @@ def reset_password() -> Any:
 
         # Reset password
         user_service = UserService()
-        success, error = user_service.set_password(data['username'], default_password, reset_password=True)
+        hashed_password = default_password
+        print(f"Hashed password for default password: {hashed_password}")
+        success, error = user_service.set_password(data['username'], hashed_password, reset_password=True)
 
         if not success:
             logger.warning(f"{user_info} Failed to reset password for user {data['username']}: {error}")

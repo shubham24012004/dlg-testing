@@ -57,12 +57,14 @@ class AuthService:
                     )
                 )
                 return False, None, error_msg
-            
-            if user.password is None or user.password != password:
-                error_msg = "Invalid password"
+
+            if not user.password:
+                error_msg = "User Password not found in DB. Please reset password."
                 return False, None, error_msg
 
-            # todo decrypt pwd from db and check with the pwd and then return success or invalid pwd message
+            if not self.auth_manager.verify_password(password, user.password):
+                error_msg = "Invalid password"
+                return False, None, error_msg
 
             self.logger.info(f"User authenticated successfully: {username}")
             self.use_manager.update_last_login(user.id)

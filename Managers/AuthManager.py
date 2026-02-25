@@ -1,6 +1,7 @@
 """
 AuditLogService with DB support for audit logs.
 """
+from werkzeug.security import generate_password_hash, check_password_hash
 from typing import Optional, Any, Dict
 
 from sqlalchemy import desc, asc, or_
@@ -35,3 +36,14 @@ class AuthManager:
             raise
         finally:
             session.close()
+
+    @staticmethod
+    def hash_password(plain_password: str) -> str:
+        """Hash a plain text password."""
+        hashed = generate_password_hash(plain_password, method='pbkdf2:sha256')
+        return hashed
+
+    @staticmethod
+    def verify_password(user_password: str, hashed_password: str) -> bool:
+        """Verify a user password against a hashed password from DB."""
+        return check_password_hash(hashed_password, user_password)
