@@ -7,7 +7,7 @@ from Managers.DlgCrawlerManager import DlgCrawlerManager
 from DatabaseOperation.DatabaseModels.master_models import FetchResult, LspMaster, DlgRaw
 from utils.constants import AuditAction, CrawlStatus
 
-from General.Managers.LspMasterManager import LspMasterManager
+from Managers.LspMasterManager import LspMasterManager
 from utils.utils import (
     extract_dlg_from_plain_text,
     extract_finsall_grand_total,

@@ -4,7 +4,7 @@ import pandas as pd
 
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.report_models import Base, LspSummary
-from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus, LspMaster
+from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus, LspMaster, AuditLog
 from utils.logger_config import logger_method
 from sqlalchemy import String, and_, or_, func, extract
 
@@ -113,12 +113,12 @@ class ReportsManager:
 
             total_amount = float(grp["amount"].fillna(0.0).sum())
             if "portfolio" in grp.columns:
-                total_portfolios = int(grp["portfolio"].nunique(dropna=True))
+                total_portfolios = int(grp.loc[grp["portfolio"].notna() & (grp["portfolio"] != ""), "portfolio"].nunique())
             else:
                 total_portfolios = int(grp.shape[0])
 
             if "lender" in grp.columns:
-                total_lenders = int(grp["lender"].nunique(dropna=True))
+                total_lenders = int(grp.loc[grp["lender"].notna() & (grp["lender"] != ""), "lender"].nunique())
             else:
                 total_lenders = int(grp.shape[0])
 
@@ -246,8 +246,21 @@ class ReportsManager:
                 LspSummary.total_lenders.label("total_lenders"),
                 LspSummary.status.label("status"),
                 LspSummary.last_crawl_date.label("last_crawl_date"),
-                LspMaster.brand_name.label("brand_name")
-            ).join(LspMaster, LspSummary.lsp_id == LspMaster.id)
+                LspMaster.brand_name.label("brand_name"),
+                AuditLog.user_id.label("user_id"),
+                AuditLog.auto_manual.label("auto_manual"),
+                AuditLog.payload.label("payload")
+            ).join(LspMaster, LspSummary.lsp_id == LspMaster.id).outerjoin(
+                AuditLog, 
+                and_(
+                    LspSummary.lsp_id == AuditLog.lsp_id,
+                    extract('year', LspSummary.last_crawl_date) == extract('year', AuditLog.log_timestamp),
+                    extract('month', LspSummary.last_crawl_date) == extract('month', AuditLog.log_timestamp),
+                    extract('day', LspSummary.last_crawl_date) == extract('day', AuditLog.log_timestamp),
+                    extract('hour', LspSummary.last_crawl_date) == extract('hour', AuditLog.log_timestamp),
+                    extract('minute', LspSummary.last_crawl_date) == extract('minute', AuditLog.log_timestamp)
+                )
+            )
 
             query = query.filter(LspSummary.scrape_year == year)
 
@@ -256,19 +269,6 @@ class ReportsManager:
 
             if status:
                 query = query.filter(LspSummary.status == status)
-
-            # query = query.filter(
-            #     and_(
-            #         or_(
-            #             LspSummary.scrape_year > start_year,
-            #             and_(LspSummary.scrape_year == start_year, LspSummary.scrape_month >= start_month)
-            #         ),
-            #         or_(
-            #             LspSummary.scrape_year < end_year,
-            #             and_(LspSummary.scrape_year == end_year, LspSummary.scrape_month <= end_month)
-            #         )
-            #     )
-            # )
 
             rows = query.all()
             result = []
@@ -288,6 +288,9 @@ class ReportsManager:
                         "total_lenders": r.total_lenders,
                         "status": r.status,
                         "last_crawl_date": r.last_crawl_date,
+                        "user_id": r.user_id,
+                        "auto_manual": r.auto_manual,
+                        "payload": r.payload,
                     }
                 )
             return result, len(result)
