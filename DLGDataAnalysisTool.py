@@ -80,7 +80,7 @@ def cron_run_lsp_summarize() -> None:
     (15th of previous month → 15th of current month).
     """
     today = datetime.now()
-    start_dt = (today.replace(day=1) - timedelta(days=1)).replace(day=15)
+    start_dt = today - timedelta(days=30)
     end_dt = today
     logger.info(f"Cron: starting LSP summarization {start_dt.date()} → {end_dt.date()}")
     try:
