@@ -29,14 +29,13 @@ class DlgRawService:
             Tuple of (success, error_message, created_record)
         """
         try:
-            # Fetch lsp_name and dlg_url from lsp_master by lsp_id
+            # Fetch lsp_name from lsp_master by lsp_id
             lsp_records, _, _ = self.lsp_manager.list_lsp_master(active_only=True, lsp_id=raw_input.lsp_id)
             if not lsp_records:
                 raise Exception(f"LSP with id={raw_input.lsp_id} not found or inactive")
             lsp = lsp_records[0]
             raw_input.lsp_name = lsp["name"]
-            raw_input.dlg_url = lsp.get("dlg_url")
-            raw_input.complete = "Partial"
+            raw_input.complete = "Completed"
             raw_input.scrape_timestamp = dt.datetime.now(tz=dt.timezone.utc)
 
             result = self.raw_manager.insert(raw_input)

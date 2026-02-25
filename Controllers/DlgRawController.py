@@ -52,7 +52,7 @@ def add_dlg_raw() -> Any:
 
         raw_input = DlgRawInput(**data)
 
-        missing = [f for f in ("lsp_id", "lender", "portfolio", "amount", "as_on_timestamp")
+        missing = [f for f in ("lsp_id", "lender", "portfolio", "amount", "as_on_timestamp", "dlg_url")
                    if not getattr(raw_input, f, None)]
         if missing:
             return jsonify({
