@@ -28,7 +28,8 @@ def all_lsp_latest_summary():
     try:
         logger.info(f"{user_info} Getting LSP summaries for Dashboard")
         reports_service = ReportsService(user_claims)
-        status = payload.get('status', status)
+        status = request.args.get('status', default=status)
+
         result, count, portfolio_count, amount, lenders_count = reports_service.get_latest_summary(status=status)
 
         logger.info(f"{user_info} Get LSP summaries completed: {count} rows returned")
