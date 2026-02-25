@@ -1070,7 +1070,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"lsp_id\": 1,\r\n    \"lender\": \"ExampleLender\",\r\n    \"portfolio\": \"ExamplePortfolio\",\r\n    \"amount\": 12345.67,\r\n    \"as_on_timestamp\": \"2025-01-31T00:00:00+00:00\"\r\n}",
+              "raw": "{\r\n    \"lsp_id\": 1,\r\n    \"lender\": \"ExampleLender\",\r\n    \"portfolio\": \"ExamplePortfolio\",\r\n    \"amount\": 12345.67,\r\n    \"as_on_timestamp\": \"2025-01-31T00:00:00+00:00\",\r\n    \"dlg_url\": \"www.example.com\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
