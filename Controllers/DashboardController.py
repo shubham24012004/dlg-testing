@@ -24,10 +24,12 @@ def all_lsp_latest_summary():
     user_role = user_claims.get('role', 'unknown')
     user_info = f"[User: {username}, Role: {user_role}]"
 
+    status = None
     try:
         logger.info(f"{user_info} Getting LSP summaries for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count, portfolio_count, amount, lenders_count = reports_service.get_latest_summary()
+        status = payload.get('status', status)
+        result, count, portfolio_count, amount, lenders_count = reports_service.get_latest_summary(status=status)
 
         logger.info(f"{user_info} Get LSP summaries completed: {count} rows returned")
         return jsonify({

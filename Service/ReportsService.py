@@ -68,7 +68,7 @@ class ReportsService:
             self.logger.exception(f"{user_info} LSP summarization failed: {exc}")
             raise
 
-    def get_latest_summary(self):
+    def get_latest_summary(self, status: Optional[str] = None):
         """Fetch LSP summaries from ReportsManager filtered by last_crawl_date.
 
         Returns:
@@ -76,7 +76,7 @@ class ReportsService:
         """
         user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
         try:
-            result, count, portfolios, amount, lenders = self.reports_manager.get_latest_summary()
+            result, count, portfolios, amount, lenders = self.reports_manager.get_latest_summary(status=status)
             self.logger.info(f"{user_info} Fetched {count} summary rows")
             return result, count, portfolios, amount, lenders
         except Exception as exc:

@@ -300,8 +300,8 @@ class ReportsManager:
         finally:
             session.close()
 
-    def get_latest_summary(self, lsp_id: Optional[int] = None, status: Optional[str] = None):
-        """Return one LspSummary row per `lsp_id` using the latest `last_crawl_date` (timestamp included).
+    def get_latest_summary(self, status: Optional[str] = None):
+        """Return one LspSummary row using the latest `last_crawl_date` (timestamp included).
 
         Returns:
             (list_of_dicts, count)
@@ -343,8 +343,6 @@ class ReportsManager:
                 LspMaster, subq.c.lsp_id == LspMaster.id
             ).filter(subq.c.rn == 1).order_by(subq.c.lsp_id.asc())
 
-            if lsp_id is not None:
-                query = query.filter(subq.c.lsp_id == lsp_id)
             if status is not None:
                 query = query.filter(subq.c.status == status)
 
