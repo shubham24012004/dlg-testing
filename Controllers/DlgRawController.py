@@ -7,13 +7,14 @@ from utils.logger_config import logger_method
 from utils.jwt_utils import token_required
 from Service.DlgRawService import DlgRawService
 from DatabaseOperation.DatabaseModels.master_models import DlgRawInput, DlgRawUpdate
+from utils.rate_limiter import limiter
 
 dlg_raw_bp = Blueprint('dlg_raw_bp', __name__)
 logger = logger_method(__name__)
 
-
 @dlg_raw_bp.post("/api/dlg_raw")
 @token_required
+@limiter.limit("10 per minute")
 def add_dlg_raw() -> Any:
     """Add a new DlgRaw record.
 
@@ -91,6 +92,7 @@ def add_dlg_raw() -> Any:
 
 @dlg_raw_bp.put("/api/dlg_raw")
 @token_required
+@limiter.limit("10 per minute")
 def update_dlg_raw() -> Any:
     """Update an existing DlgRaw record.
 
@@ -154,6 +156,7 @@ def update_dlg_raw() -> Any:
 
 @dlg_raw_bp.delete("/api/dlg_raw")
 @token_required
+@limiter.limit("10 per minute")
 def delete_dlg_raw() -> Any:
     """Delete a DlgRaw record by its id.
 

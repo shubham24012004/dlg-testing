@@ -6,12 +6,11 @@ from typing import Any
 from utils.logger_config import logger_method
 from utils.jwt_utils import create_jwt_token, token_required
 from Service.AuthService import AuthService
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from utils.rate_limiter import limiter
 
 auth_bp = Blueprint('auth_bp', __name__)
 logger = logger_method(__name__)
-limiter = Limiter(key_func=get_remote_address, default_limits=["10 per minute"])
+
 
 
 @auth_bp.post("/api/auth/login")

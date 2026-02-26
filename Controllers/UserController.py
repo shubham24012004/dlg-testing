@@ -10,14 +10,15 @@ from DatabaseOperation.DatabaseModels.master_models import UserInput, UserUpdate
 from utils.constants import default_password
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from utils.rate_limiter import limiter
 
 user_bp = Blueprint('user_bp', __name__)
 logger = logger_method(__name__)
-limiter = Limiter(key_func=get_remote_address, default_limits=["10 per minute"])
 
 
 @user_bp.post("/api/user")
 @token_required
+@limiter.limit("5 per minute")
 def add_user() -> Any:
     """Register a new user
     Request body:
@@ -92,6 +93,7 @@ def add_user() -> Any:
 
 @user_bp.put("/api/user")
 @token_required
+@limiter.limit("5 per minute")
 def update_user() -> Any:
     """Update user details.
     
@@ -230,7 +232,7 @@ def update_password() -> Any:
 
 
 @user_bp.post("/api/user/reset-password")
-@limiter.limit("5 per minute")
+@limiter.limit("1 per minute")
 def reset_password() -> Any:
     """Reset user password.
 
@@ -292,6 +294,7 @@ def reset_password() -> Any:
 
 
 @user_bp.get("/api/users")
+@limiter.limit("10 per minute")
 @token_required
 def list_users() -> Any:
     """List all users with filtering and pagination.

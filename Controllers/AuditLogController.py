@@ -5,14 +5,16 @@ from utils.jwt_utils import token_required
 from flask import request, jsonify, Blueprint
 
 from Service.AuditLogService import AuditLogService
+from utils.rate_limiter import limiter
+
 
 auditlog_bp = Blueprint('auditlog_bp', __name__)
 
 logger = logger_method(__name__)
 
-
 @auditlog_bp.get("/api/auditlog")
 @token_required
+@limiter.limit("10 per minute")
 def handle_list_audit_log():
     """Handle audit log list request."""
     # Access user details from JWT token

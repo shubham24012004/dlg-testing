@@ -25,6 +25,9 @@ from Controllers.UserController import user_bp
 from Controllers.DlgRawController import dlg_raw_bp
 from Service.ReportsService import ReportsService
 
+from utils.rate_limiter import limiter
+from flask_limiter.errors import RateLimitExceeded
+
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.cron import CronTrigger
@@ -51,6 +54,12 @@ class AppSettings:
 # Application configuration
 settings = AppSettings()
 app = Flask(__name__)
+
+limiter.init_app(app)
+
+@app.errorhandler(RateLimitExceeded)
+def ratelimit_handler(e):
+    return jsonify({"status": 429, "message": "Rate limit exceeded"}), 429
 
 CORS(app)
 app.register_blueprint(auth_bp)

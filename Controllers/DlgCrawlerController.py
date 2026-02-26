@@ -7,6 +7,8 @@ from utils.jwt_utils import token_required
 from Service.DlgCrawlerService import DlgCrawlerService
 from Service.LspMasterService import LSPMasterService
 
+from utils.rate_limiter import limiter
+
 """User-facing entry point that wires inputs to the crawler manager."""
 crawler_bp = Blueprint('crawler_bp', __name__)
 
@@ -15,6 +17,7 @@ logger = logger_method(__name__)
 
 @crawler_bp.post("/api/scrape")
 @token_required
+@limiter.limit("5 per minute")
 def handle_trigger_scrape():
     """Handle manual scrape trigger request."""
     user_claims = request.user_claims
