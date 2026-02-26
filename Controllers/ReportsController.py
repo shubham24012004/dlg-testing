@@ -7,6 +7,11 @@ from datetime import datetime, timedelta
 
 from Service.ReportsService import ReportsService
 
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+from utils.rate_limiter import limiter
+
 """Controller for Reports API operations."""
 
 reports_bp = Blueprint('reports_bp', __name__)
@@ -16,6 +21,7 @@ logger = logger_method(__name__)
 
 @reports_bp.post("/api/reports/summarize_lsp")
 @token_required
+@limiter.limit("10 per minute")
 def summarize_lsp():
     """Handle LSP summarization request.
     

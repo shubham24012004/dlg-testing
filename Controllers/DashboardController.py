@@ -6,6 +6,7 @@ from flask import request, jsonify, Blueprint
 from datetime import datetime
 
 from Service.ReportsService import ReportsService
+from utils.rate_limiter import limiter
 
 """Controller for Reports API operations."""
 
@@ -16,6 +17,7 @@ logger = logger_method(__name__)
 
 @dashboard_bp.get("/api/dashboard/all_lsp_latest_summary")
 @token_required
+@limiter.limit("10 per minute")
 def all_lsp_latest_summary():
     """Get lsp_summary Table data."""
 
@@ -51,6 +53,7 @@ def all_lsp_latest_summary():
 
 @dashboard_bp.post("/api/dashboard/all_lsp_all_summary")
 @token_required
+@limiter.limit("10 per minute")
 def all_lsp_all_summary():
     """Get lsp_summary Table data."""
 
@@ -92,6 +95,7 @@ def all_lsp_all_summary():
 
 @dashboard_bp.get("/api/dashboard/lsp_raw")
 @token_required
+@limiter.limit("10 per minute")
 def lsp_raw():
     """Get lsp_raw Table data for a specific LSP ID."""
 
@@ -134,6 +138,7 @@ def lsp_raw():
 
 @dashboard_bp.post("/api/dashboard/lsp_summary_graph")
 @token_required
+@limiter.limit("10 per minute")
 def get_summary_for_graph():
     """Get lsp_summary Table data for a specific LSP ID for graphing."""
 
@@ -176,6 +181,7 @@ def get_summary_for_graph():
 
 
 @dashboard_bp.get("/api/dashboard/enums")
+@limiter.limit("10 per minute")
 def get_enums():
     """Return all enum values for frontend use."""
     return jsonify({

@@ -6,6 +6,11 @@ from flask import request, jsonify, Blueprint
 from Service.LspMasterService import LSPMasterService
 from DatabaseOperation.DatabaseModels.master_models import LspMasterIp, LspMaster
 
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+from utils.rate_limiter import limiter
+
 """Controller for API operations with business logic."""
 
 lsp_master_bp = Blueprint('lsp_master_bp', __name__)
@@ -13,8 +18,10 @@ lsp_master_bp = Blueprint('lsp_master_bp', __name__)
 logger = logger_method(__name__)
 
 
+
 @lsp_master_bp.get("/api/lsp_master")
 @token_required
+@limiter.limit("10 per minute")
 def handle_list_lsp_master():
     """Handle LSP master list request."""
     user_claims = request.user_claims
@@ -59,6 +66,7 @@ def handle_list_lsp_master():
 
 @lsp_master_bp.post("/api/dlg_url")
 @token_required
+@limiter.limit("10 per minute")
 def get_dlg_url():
     """Handle LSP master list request."""
     user_claims = request.user_claims
@@ -100,6 +108,7 @@ def get_dlg_url():
 
 @lsp_master_bp.post("/api/lsp_master")
 @token_required
+@limiter.limit("10 per minute")
 def handle_new_lsp_master():
     """Handle LSP master update request."""
     user_claims = request.user_claims
@@ -136,6 +145,7 @@ def handle_new_lsp_master():
 
 @lsp_master_bp.put("/api/lsp_master")
 @token_required
+@limiter.limit("10 per minute")
 def handle_update_lsp_master():
     """Handle LSP master update request."""
     user_claims = request.user_claims
@@ -174,6 +184,7 @@ def handle_update_lsp_master():
 
 @lsp_master_bp.delete("/api/lsp_master")
 @token_required
+@limiter.limit("10 per minute")
 def handle_delete_lsp_master():
     """Handle LSP master delete request."""
     user_claims = request.user_claims
