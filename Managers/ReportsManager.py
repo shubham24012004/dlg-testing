@@ -406,6 +406,7 @@ class ReportsManager:
                 if r.lender:
                     lenders = lenders + 1
                 result.append({
+                    "id": r.id,
                     "lsp_id": r.lsp_id,
                     "lsp_name": r.lsp_name,
                     "lender": r.lender,
