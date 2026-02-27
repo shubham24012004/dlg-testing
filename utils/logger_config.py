@@ -1,6 +1,8 @@
 import logging
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def logger_method(name):
     if os.getenv("environment") == 'dev':
