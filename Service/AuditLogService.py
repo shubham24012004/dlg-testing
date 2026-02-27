@@ -30,6 +30,7 @@ class AuditLogService:
                         lsp_id: Optional[int] = None,
                         action_str: Optional[str] = None,
                         page: int = 1,
-                        page_size: int = 10):
+                        page_size: int = 10,
+                        user: Optional[str] = None):
         return self.audit_manager.list_audit_log(start_date=start_date, end_date=end_date, lsp_id=lsp_id,
-                                                 action_str=action_str, page=page, page_size=page_size)
+                                                 action_str=action_str, page=page, page_size=page_size, user = user)

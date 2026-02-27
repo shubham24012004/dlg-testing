@@ -71,7 +71,7 @@ class AuditLogManager:
             log_timestamp=dt.datetime.now(tz=dt.timezone.utc),
         )
 
-    def list_audit_log(self, start_date, end_date, lsp_id, action_str, page, page_size):
+    def list_audit_log(self, start_date, end_date, lsp_id, action_str, page, page_size, user):
         session = self.conn_factory.get_session()
         try:
             query = session.query(AuditLog).order_by(desc(AuditLog.log_timestamp))
@@ -89,6 +89,11 @@ class AuditLogManager:
 
             if end_date:                
                 query = query.filter(AuditLog.log_timestamp <= end_date)
+
+            # apply user filter before counting/pagination to avoid
+            # SQLAlchemy error when calling filter() after limit/offset
+            if user is not None and user != "":
+                query = query.filter(AuditLog.user_id.ilike(f"%{user}%"))
 
             total_count = query.count()
 
@@ -120,7 +125,7 @@ class AuditLogManager:
 
         except SQLAlchemyError as e:
             self.logger.exception(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
+            # Return an empty result tuple so callers don't attempt to unpack None
+            return [], 0, 0
         finally:
             session.close()
-
-        return None

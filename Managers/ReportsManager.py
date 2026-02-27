@@ -300,7 +300,7 @@ class ReportsManager:
         finally:
             session.close()
 
-    def get_latest_summary(self, status: Optional[str] = None):
+    def get_latest_summary(self, status: Optional[str] = None, lsp_name: Optional[str] = None):
         """Return one LspSummary row using the latest `last_crawl_date` (timestamp included).
 
         Returns:
@@ -345,6 +345,9 @@ class ReportsManager:
 
             if status is not None:
                 query = query.filter(subq.c.status == status)
+            
+            if lsp_name is not None:
+                query = query.filter(subq.c.name.ilike(f"%{lsp_name}%"))
 
             rows = query.all()
             result = []
