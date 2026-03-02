@@ -8,7 +8,7 @@ from typing import Optional, Any, Dict
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
-from DatabaseOperation.DatabaseModels.master_models import AuditLog
+from DatabaseOperation.DatabaseModels.master_models import AuditLog, LspMaster
 from utils.constants import AuditAction
 from utils.logger_config import logger_method
 
@@ -74,20 +74,26 @@ class AuditLogManager:
     def list_audit_log(self, start_date, end_date, lsp_id, action_str, page, page_size, user):
         session = self.conn_factory.get_session()
         try:
-            query = session.query(AuditLog).order_by(desc(AuditLog.log_timestamp))
+            query = session.query(
+                AuditLog,
+                LspMaster.name.label("lsp_name")
+            ).outerjoin(
+                LspMaster,
+                (AuditLog.lsp_id != None) & (AuditLog.lsp_id == LspMaster.id)
+            ).order_by(desc(AuditLog.log_timestamp))
 
             if lsp_id:
                 query = query.filter(AuditLog.lsp_id == lsp_id)
 
             # --- action filter: supports AuditAction or string like "LOGIN" ---
-            if action_str:                
+            if action_str:
                 query = query.filter(AuditLog.action_taken == action_str)
 
             # --- date filters: convert date -> datetime bounds (recommended) ---
-            if start_date:                
+            if start_date:
                 query = query.filter(AuditLog.log_timestamp >= start_date)
 
-            if end_date:                
+            if end_date:
                 query = query.filter(AuditLog.log_timestamp <= end_date)
 
             # apply user filter before counting/pagination to avoid
@@ -103,9 +109,9 @@ class AuditLogManager:
             rows = query.all()
             result = []
 
-            for row in rows:
+            for row, lsp_name in rows:
                 payload_val = row.payload
-                # If payload is stored as JSON dict, keep it. If string, try parse.
+                # If payload is stored as a string, try to parse it
                 if isinstance(payload_val, str):
                     try:
                         payload_val = json.loads(payload_val)
@@ -118,6 +124,7 @@ class AuditLogManager:
                     "user_id": row.user_id,
                     "payload": payload_val,
                     "action_taken": row.action_taken,
+                    "lsp_name": lsp_name,
                     "log_timestamp": row.log_timestamp,
                 })
 

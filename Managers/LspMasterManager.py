@@ -77,11 +77,10 @@ class LspMasterManager:
                 scraped = session.query(DlgRaw).filter_by(lsp_id=lm.id).count() > 0
                 if not scraped:
                     # can update all Data as LSP has NOT been scraped and there is NO raw data.
-                    if lm.name is not None:
-                        existing_lsp.name = lm.name
                     if lm.home_url is not None:
                         existing_lsp.home_url = lm.home_url
-
+                if lm.name is not None:
+                    existing_lsp.name = lm.name
                 # can update DLG URL only as LSP has been scraped and there is raw data. cannot break integrity
                 if lm.dlg_url is not None:
                     existing_lsp.dlg_url = lm.dlg_url

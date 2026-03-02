@@ -106,7 +106,7 @@ class DlgRawService:
 
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=raw_update.lsp_id,
+                    lsp_id=result["lsp_id"],
                     action_taken=AuditAction.UPDATE_DLG_RAW,
                     auto_manual="manual",
                     user_id=user_id,
@@ -140,7 +140,7 @@ class DlgRawService:
             result = self.raw_manager.delete(raw_id)
             user_id = self.user_claims.get('username') if self.user_claims else "system"
 
-            if result <= 0:
+            if not result:
                 error_msg = f"DlgRaw record with id={raw_id} not found"
                 self.auditlog_service.record(
                     self.auditlog_service.build(
@@ -156,12 +156,12 @@ class DlgRawService:
 
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=None,
+                    lsp_id=result["lsp_id"],
                     action_taken=AuditAction.DELETE_DLG_RAW,
                     auto_manual="manual",
                     user_id=user_id,
                     payload={"status": "Success", "details": "DlgRaw record deleted",
-                             "request_object": {"id": raw_id}}
+                             "request_object": {"id": raw_id, "lsp_id": result["lsp_id"]}}
                 )
             )
             self.logger.info(f"DlgRaw record id={raw_id} deleted successfully")
