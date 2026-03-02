@@ -125,7 +125,7 @@ class DlgRawManager:
             session.add(existing)
             session.commit()
             self.logger.info(
-                f"{self._get_user_info()} DlgRaw record id={raw_update.id} updated successfully"
+                f"{self._get_user_info()} DlgRaw record id={raw_update.id} (lsp_id={existing.lsp_id}) updated successfully"
             )
             return {
                 "id": existing.id,
@@ -162,10 +162,11 @@ class DlgRawManager:
                 self.logger.error(f"{self._get_user_info()} DlgRaw record with id={raw_id} not found")
                 return 0
 
+            lsp_id = existing.lsp_id
             session.delete(existing)
             session.commit()
-            self.logger.info(f"{self._get_user_info()} DlgRaw record id={raw_id} deleted successfully")
-            return raw_id
+            self.logger.info(f"{self._get_user_info()} DlgRaw record id={raw_id} (lsp_id={lsp_id}) deleted successfully")
+            return {"id": raw_id, "lsp_id": lsp_id}
         except SQLAlchemyError:
             session.rollback()
             raise
