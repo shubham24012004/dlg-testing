@@ -1,7 +1,7 @@
 """
 SQLAlchemy ORM models for DLG analysis reports tables.
 """
-from sqlalchemy import Column, String, Boolean, Float, Integer, ForeignKey, TIMESTAMP, JSON
+from sqlalchemy import Column, String, Boolean, Float, Integer, ForeignKey, TIMESTAMP, JSON, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 import os
 from enum import Enum
@@ -12,7 +12,10 @@ Base = declarative_base()
 
 class LspSummary(Base):
     __tablename__ = "lsp_summary"
-    __table_args__ = {'schema': 'reports'}
+    __table_args__ = (
+        UniqueConstraint('lsp_id', 'scrape_year', 'scrape_month', name='uq_lsp_summary_lsp_year_month'),
+        {'schema': 'reports'},
+    )
     id = Column(Integer, primary_key=True, autoincrement=True)
     lsp_id = Column(Integer, nullable=False)
     name = Column(String, nullable=False)

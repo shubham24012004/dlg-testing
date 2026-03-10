@@ -178,8 +178,14 @@ class ReportsManager:
         upserted = 0
         try:
             for s in summaries:
-                existing = session.query(LspSummary).filter_by(lsp_id=s["lsp_id"], scrape_year=s["scrape_year"],
-                                                               scrape_month=s["scrape_month"]).one_or_none()
+                duplicates = session.query(LspSummary).filter_by(lsp_id=s["lsp_id"], scrape_year=s["scrape_year"],
+                                                                  scrape_month=s["scrape_month"]).all()
+                # Delete extra duplicates, keep only the first
+                if len(duplicates) > 1:
+                    for dup in duplicates[1:]:
+                        session.delete(dup)
+                    session.flush()
+                existing = duplicates[0] if duplicates else None
                 if existing:
                     existing.name = s["name"]
                     existing.total_portfolios = s["total_portfolios"]
