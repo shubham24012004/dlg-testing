@@ -139,7 +139,7 @@ def main() -> None:
             )
 
     # Run Flask server
-    logger.info("Starting Flask server on {0}:{0}", settings.host, settings.port)
+    logger.info("Starting Flask server on %s:%s", settings.host, settings.port)
     app.run(host=settings.host, port=settings.port, debug=settings.debug)
 
 
