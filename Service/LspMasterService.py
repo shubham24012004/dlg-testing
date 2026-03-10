@@ -151,7 +151,7 @@ class LSPMasterService:
         return dlg_url, reason
 
     def load_active(self, lsp_id: Optional[int] = None) -> List[LspMaster]:
-        result, total_count, rows = self.list_lsp_master(active_only=True, lsp_id=lsp_id)
+        result, total_count, rows = self.list_lsp_master(active_only=True, lsp_id=lsp_id, per_page=None)
         lsp_master_list = []
         for row in result:
             lsp_master_obj = LspMaster(**row)
