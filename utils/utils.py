@@ -43,6 +43,7 @@ def fetch_with_requests(url: str, timeout: int = 40) -> FetchResult:
 
 def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
                           pre_click_js: str | None = None) -> FetchResult:
+    from DatabaseOperation.DatabaseModels.master_models import FetchResult
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError("Playwright not installed/available. Install playwright to scrape JS-rendered pages.")
     try:
@@ -341,8 +342,8 @@ def extract_from_pdf(fetch: FetchResult, lsp_name: Optional[str] = None, rules: 
                     if not any(_cell for _cell in _row):
                         continue
                     _first = (_row[0] or '').strip() if _row[0] else ''
-                    _lender = (_row[2] or '').strip() if len(_row) > 2 and _row[2] else ''
-                    _amount_raw = _row[6] if len(_row) > 6 else None
+                    _lender = (_row[1] or '').strip() if len(_row) > 1 and _row[1] else ''
+                    _amount_raw = _row[5] if len(_row) > 5 else None
                     _amount = None
                     if _amount_raw is not None:
                         _m = re.search(r'([0-9]+(?:\.[0-9]+)?)', str(_amount_raw).replace(',', ''))
@@ -450,12 +451,17 @@ def extract_from_pdf(fetch: FetchResult, lsp_name: Optional[str] = None, rules: 
                     is_continuation_page = False
 
                     # Detect continuation pages: first row contains "Portfolio" pattern (data, not header)
-                    if first_row and len(first_row) == 1:
+                    if first_row and last_valid_header:
                         first_cell = first_row[0]
-                        # If it looks like "Portfolio X.Y" (optionally preceded by numbers/newlines), it's data
-                        # Examples: "Portfolio 6.2 -", "23\nPortfolio 8.10", "Portfolio 1.1\n-"
-                        if re.search(r'Portfolio\s+\d+\.\d+', first_cell, re.IGNORECASE):
-                            is_continuation_page = True
+                        if len(first_row) == 1:
+                            # Single-col tables: merged cells like "Portfolio 6.2 -", "23\nPortfolio 8.10"
+                            if re.search(r'Portfolio\s+\d+\.\d+', first_cell, re.IGNORECASE):
+                                is_continuation_page = True
+                        else:
+                            # Multi-col tables: first cell is a portfolio identifier like "Portfolio 3.9"
+                            # (not a generic header like "Portfolio")
+                            if re.search(r'^Portfolio\s+\d+[\.\d]*\s*$', first_cell, re.IGNORECASE):
+                                is_continuation_page = True
 
                     if is_continuation_page and last_valid_header:
                         # Use header from previous page and process ALL rows as data
@@ -707,6 +713,7 @@ def render_url_to_pdf(url: str,
                       wait_until: str = "networkidle",
                       pre_click_js: Optional[str] = None,
                       ) -> FetchResult:
+    from DatabaseOperation.DatabaseModels.master_models import FetchResult
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError("Playwright not installed/available. Install playwright to enable HTML->PDF rendering.")
     from playwright.sync_api import TimeoutError as PWTimeout
@@ -717,36 +724,36 @@ def render_url_to_pdf(url: str,
             context = browser.new_context(user_agent=BROWSER_USER_AGENT, extra_http_headers=BROWSER_HEADERS)
             page = context.new_page()
             wait_mode = wait_until if wait_until in {"load", "domcontentloaded", "networkidle"} else "networkidle"
-        try:
-            page.goto(url, wait_until=wait_mode, timeout=timeout_ms)
-        except Exception as e:
-            # Retry with a more permissive strategy if initial navigation times out
             try:
-                if isinstance(e, PWTimeout) or 'Timeout' in str(e):
-                    # retry once using 'load' and a longer timeout
-                    page.goto(url, wait_until='load', timeout=max(timeout_ms * 2, 120000))
-                else:
+                page.goto(url, wait_until=wait_mode, timeout=timeout_ms)
+            except Exception as e:
+                # Retry with a more permissive strategy if initial navigation times out
+                try:
+                    if isinstance(e, PWTimeout) or 'Timeout' in str(e):
+                        # retry once using 'load' and a longer timeout
+                        page.goto(url, wait_until='load', timeout=max(timeout_ms * 2, 120000))
+                    else:
+                        raise
+                except Exception:
+                    context.close()
+                    browser.close()
                     raise
-            except Exception:
-                context.close()
-                browser.close()
-                raise
 
-        if pre_click_js:
-            page.evaluate(pre_click_js)
-            page.wait_for_timeout(2000)
-        if wait_ms:
-            page.wait_for_timeout(wait_ms)
-        pdf_bytes = page.pdf(format="A4", print_background=True, prefer_css_page_size=True)
-        context.close()
-        browser.close()
-        return FetchResult(
-            url=url,
-            status_code=200,
-            content_type="application/pdf",
-            body=pdf_bytes,
-            fetch_mode_used="playwright-pdf",
-        )
+            if pre_click_js:
+                page.evaluate(pre_click_js)
+                page.wait_for_timeout(2000)
+            if wait_ms:
+                page.wait_for_timeout(wait_ms)
+            pdf_bytes = page.pdf(format="A4", print_background=True, prefer_css_page_size=True)
+            context.close()
+            browser.close()
+            return FetchResult(
+                url=url,
+                status_code=200,
+                content_type="application/pdf",
+                body=pdf_bytes,
+                fetch_mode_used="playwright-pdf",
+            )
     except Exception as ex:
         raise RuntimeError(f"Failed to render URL to PDF: {ex}")
 
