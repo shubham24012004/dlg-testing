@@ -1619,11 +1619,6 @@ def normalize_rows(
             if row["Lender"] is None and row["Portfolio"] is None and row["Amount"] is None:
                 continue
 
-            # Skip rows where both Portfolio and Amount are None — these are placeholder rows
-            # on the page (all dashes) that carry no meaningful DLG data.
-            if row["Portfolio"] is None and row["Amount"] is None:
-                continue
-
             # Skip rows where we have amount but no portfolio (likely bad extraction from CIN or other non-table text)
             if row["Portfolio"] is None and row["Amount"] is not None and row["Lender"] is None:
                 continue
