@@ -81,13 +81,14 @@ class DlgCrawlerService:
         scrape_ts = dt.datetime.now(tz=dt.timezone.utc)
         rules = load_rules(source.rules_json) if source.rules_json else {}
         pre_click_js = rules.get("pre_click_js")
+        playwright_wait_ms = self._coerce_int(rules.get("playwright_wait_ms")) or 0
         ocr_rules = rules.get("ocr") or {}
         simple_cfg = ocr_rules.get("simple") if isinstance(ocr_rules.get("simple"), dict) else ocr_rules
 
         if not source.dlg_url:
             return CrawlStatus.MISSING, None, None, [], "Missing DLG URL"
         try:
-            fetch = self._execute_fetch(source, pre_click_js)  # T&C
+            fetch = self._execute_fetch(source, pre_click_js, wait_ms=playwright_wait_ms)  # T&C
 
         except Exception as exc:
             return CrawlStatus.ERROR, None, None, [], str(exc)
@@ -268,10 +269,11 @@ class DlgCrawlerService:
     @staticmethod
     def _execute_fetch(source: LspMaster,
                        pre_click_js: Optional[str],
+                       wait_ms: int = 0,
                        ) -> FetchResult:
         fetch_hint = (source.fetch_hint or "auto").lower()
         if fetch_hint == "playwright":
-            return fetch_with_playwright(source.dlg_url, pre_click_js=pre_click_js)
+            return fetch_with_playwright(source.dlg_url, pre_click_js=pre_click_js, wait_ms=wait_ms)
         return fetch_with_requests(source.dlg_url)
 
     def _parse_rows(self,
@@ -299,7 +301,8 @@ class DlgCrawlerService:
 
             rows = extract_from_html_tables(fetch, table_index=rules.get("table_index"))
             if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
-                fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"))
+                fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"),
+                                                 wait_ms=rules.get("playwright_wait_ms") or 0)
                 rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"))
             return rows, ""
         except Exception as exc:

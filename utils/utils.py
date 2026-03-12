@@ -42,7 +42,8 @@ def fetch_with_requests(url: str, timeout: int = 40) -> FetchResult:
 
 
 def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
-                          pre_click_js: str | None = None) -> FetchResult:
+                          pre_click_js: str | None = None,
+                          wait_ms: int = 0) -> FetchResult:
     from DatabaseOperation.DatabaseModels.master_models import FetchResult
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError("Playwright not installed/available. Install playwright to scrape JS-rendered pages.")
@@ -107,6 +108,8 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
                 )
 
             # Otherwise return HTML content
+            if wait_ms > 0:
+                page.wait_for_timeout(wait_ms)
             html = page.content().encode("utf-8", errors="ignore")
             context.close()
             browser.close()
