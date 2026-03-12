@@ -1588,7 +1588,8 @@ def normalize_rows(
                 portfolio_clean = None
                 if portfolio_txt is not None:
                     portfolio_str = str(portfolio_txt).strip()
-                    if portfolio_str and portfolio_str != "None":
+                    # Treat dash/placeholder values (-, --, –) as empty/None
+                    if portfolio_str and portfolio_str != "None" and not re.fullmatch(r'[-–—]{1,3}', portfolio_str):
                         portfolio_clean = portfolio_str
 
                 ason = parse_date_any(ason_txt)
@@ -1616,6 +1617,11 @@ def normalize_rows(
 
             # Skip rows where we have all None except date/scrape timestamp
             if row["Lender"] is None and row["Portfolio"] is None and row["Amount"] is None:
+                continue
+
+            # Skip rows where both Portfolio and Amount are None — these are placeholder rows
+            # on the page (all dashes) that carry no meaningful DLG data.
+            if row["Portfolio"] is None and row["Amount"] is None:
                 continue
 
             # Skip rows where we have amount but no portfolio (likely bad extraction from CIN or other non-table text)
@@ -1763,8 +1769,9 @@ def merge_partial_rows(rows: List[dict[str, Any]]) -> List[dict[str, Any]]:
             # Calculate sum of all OTHER rows
             other_sum = sum(amt for j, (_, amt) in enumerate(row_amounts) if j != i)
 
-            # If current amount equals sum of others (within small tolerance for floating point)
-            if abs(current_amount - other_sum) < 0.01:
+            # If current amount equals sum of others (within small tolerance for floating point,
+            # allowing up to 0.05 Cr to handle display-rounding differences across rows)
+            if abs(current_amount - other_sum) <= 0.05:
                 sum_total_rows.add(id(current_row))
 
     # Second pass: filter out headers, totals, and sum totals
