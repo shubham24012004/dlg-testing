@@ -108,7 +108,7 @@ class DlgCrawlerManager:
                         lender=lender,
                         portfolio=portfolio,
                         as_on_timestamp=as_on_ts,
-                    ).one_or_none()
+                    ).first()
                 except Exception:
                     exists = None
 
