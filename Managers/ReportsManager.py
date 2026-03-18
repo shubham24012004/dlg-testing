@@ -122,6 +122,8 @@ class ReportsManager:
             else:
                 total_lenders = int(grp.shape[0])
 
+            if total_portfolios < total_lenders:
+                total_portfolios = total_lenders
             last_scrape = None
             if grp["scrape_timestamp"].notna().any():
                 last_scrape = grp["scrape_timestamp"].max()
@@ -404,16 +406,16 @@ class ReportsManager:
                 query = query.offset((page - 1) * per_page).limit(per_page)
             rows = query.all()
             result = []
-            portfolios = 0
+            portfolios = set()
             amount = 0
-            lenders = 0
+            unique_lenders = set()
             for r in rows:
                 if r.portfolio:
-                    portfolios = portfolios + 1
+                    portfolios.add(r.portfolio)
                 amt = float(r.amount) if r.amount is not None else 0.0
                 amount = amount + amt
                 if r.lender:
-                    lenders = lenders + 1
+                    unique_lenders.add(r.lender)
                 result.append({
                     "id": r.id,
                     "lsp_id": r.lsp_id,
@@ -426,7 +428,9 @@ class ReportsManager:
                     "dlg_url": r.dlg_url,
                     "complete": r.complete,
                 })
-            return result, count, portfolios, amount, lenders
+            if(len(portfolios) < len(unique_lenders)):
+                no_of_portfolios = len(unique_lenders)
+            return result, count, no_of_portfolios, amount, len(unique_lenders)
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
             raise

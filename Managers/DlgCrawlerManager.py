@@ -74,19 +74,25 @@ class DlgCrawlerManager:
                         if parsed is not None:
                             amount_val = normalize_amount_to_crores(parsed)
 
-                # Heuristic: if amount missing but portfolio looks numeric, treat portfolio as amount
-                if amount_val is None and isinstance(portfolio, str) and re.search(r"\d", portfolio):
+                # Heuristic: if amount missing but portfolio looks like a bare number/amount,
+                # treat portfolio as amount. Only applies when portfolio starts with a digit
+                # or currency symbol — NOT for labelled values like "Portfolio 1".
+                if amount_val is None and isinstance(portfolio, str) and re.match(r'^\s*[\d₹]', portfolio):
                     parsed = parse_amount_any(portfolio)
                     if parsed is not None:
                         amount_val = normalize_amount_to_crores(parsed)
                         portfolio = ""
 
-                # If lender looks numeric and amount missing, try to recover
+                # If lender looks like a proper amount (not a simple 1-3 digit index) and
+                # amount is missing, try to recover.
                 if amount_val is None and isinstance(lender, str) and re.search(r"\d", lender):
-                    parsed = parse_amount_any(lender)
-                    if parsed is not None:
-                        amount_val = normalize_amount_to_crores(parsed)
-                        lender = ""
+                    stripped_lender = lender.strip()
+                    # Skip simple integer indices like "1", "2", "12" — these are lender IDs
+                    if not re.fullmatch(r'\d{1,3}', stripped_lender):
+                        parsed = parse_amount_any(lender)
+                        if parsed is not None:
+                            amount_val = normalize_amount_to_crores(parsed)
+                            lender = ""
 
                 # Coerce/validate as_on_timestamp
                 if isinstance(as_on_ts, dt.datetime):
@@ -102,7 +108,7 @@ class DlgCrawlerManager:
                         lender=lender,
                         portfolio=portfolio,
                         as_on_timestamp=as_on_ts,
-                    ).one_or_none()
+                    ).first()
                 except Exception:
                     exists = None
 

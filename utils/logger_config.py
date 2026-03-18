@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv

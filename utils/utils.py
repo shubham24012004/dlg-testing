@@ -42,7 +42,8 @@ def fetch_with_requests(url: str, timeout: int = 40) -> FetchResult:
 
 
 def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
-                          pre_click_js: str | None = None) -> FetchResult:
+                          pre_click_js: str | None = None,
+                          wait_ms: int = 0) -> FetchResult:
     from DatabaseOperation.DatabaseModels.master_models import FetchResult
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError("Playwright not installed/available. Install playwright to scrape JS-rendered pages.")
@@ -107,6 +108,8 @@ def fetch_with_playwright(url: str, timeout_ms: int = 60_000,
                 )
 
             # Otherwise return HTML content
+            if wait_ms > 0:
+                page.wait_for_timeout(wait_ms)
             html = page.content().encode("utf-8", errors="ignore")
             context.close()
             browser.close()
@@ -504,6 +507,27 @@ def extract_from_pdf(fetch: FetchResult, lsp_name: Optional[str] = None, rules: 
                             # Filter out "Total" lines as they are summary rows
                             lines = [line for line in lines if
                                      not re.match(r'^Total\s*\d*\.?\d*$', line, re.IGNORECASE)]
+
+                            # Detect reversed layout: a data line (starts with loan type) followed by
+                            # a company/lender name line (no digits). E.g. page 2 of Bhanix:
+                            #   ["Personal Loan 1 5.44", "Apollo Finvest (India) Limited"]
+                            # → combine as "Apollo Finvest (India) Limited Personal Loan 1 5.44"
+                            _loan_type_re = re.compile(r'^(?:Personal|Business)\s+Loan\b', re.IGNORECASE)
+                            merged_lines = []
+                            i = 0
+                            while i < len(lines):
+                                current = lines[i]
+                                if (_loan_type_re.match(current)
+                                        and i + 1 < len(lines)
+                                        and not re.search(r'\d', lines[i + 1])
+                                        and not _loan_type_re.match(lines[i + 1])):
+                                    # Next line is a company name – prepend it so lender regex can match
+                                    merged_lines.append(f"{lines[i + 1]} {current}")
+                                    i += 2
+                                else:
+                                    merged_lines.append(current)
+                                    i += 1
+                            lines = merged_lines
 
                             for line in lines:
                                 # Create a new row for each line
@@ -1170,9 +1194,12 @@ def parse_finagg_dlg_plain_text(
 
     rows: List[Dict[str, Any]] = []
 
-    # Extract date first
+    # Extract date first — try 'Portfolio OS as on' (old format) then plain 'as on'
     as_on_date = None
-    date_match = re.search(r"Portfolio OS as on ([0-9]{1,2}-[0-9]{1,2}-[0-9]{4})", text, re.IGNORECASE)
+    date_match = re.search(
+        r"(?:Portfolio\s+OS\s+as\s+on|as\s+on)\s+([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{4})",
+        text, re.IGNORECASE
+    )
     if date_match:
         date_str = date_match.group(1)
         as_on_date = parse_date_any(date_str)
@@ -1226,14 +1253,34 @@ def parse_finagg_dlg_plain_text(
 
                 rows.append({
                     "LSP Name": lsp_name,
-                    "Lender": "FinAGG Services Private Limited",
-                    "Portfolio": f"Portfolio {portfolio_num}",
+                    "Lender": f"Portfolio {portfolio_num}",
+                    "Portfolio": None,
                     "Amount": amount,
                     "AsOnTimestamp": as_on_date,
                     "ScrapeTimestamp": scrape_ts
                 })
             except ValueError:
                 pass  # Skip if amount can't be parsed
+
+        elif line.lower().startswith('portfolio'):
+            # Fallback: pdfplumber merged the portfolio number into the amount with no space
+            # e.g. "Portfolio 19,88,31,33,840 No" → Portfolio 1, amount 19,88,31,33,840
+            merged = re.match(r"Portfolio\s+(\d[\d,]+)\s+(Yes|No)\s*$", line, re.IGNORECASE)
+            if merged:
+                amount_raw = merged.group(1).replace(',', '').replace(' ', '')
+                try:
+                    amount = float(amount_raw)
+                    inferred_num = str(len(rows) + 1)
+                    rows.append({
+                        "LSP Name": lsp_name,
+                        "Lender": f"Portfolio {inferred_num}",
+                        "Portfolio": None,
+                        "Amount": amount,
+                        "AsOnTimestamp": as_on_date,
+                        "ScrapeTimestamp": scrape_ts
+                    })
+                except ValueError:
+                    pass
 
     return rows
 
@@ -1569,7 +1616,16 @@ def normalize_rows(
                 ason_txt = get_field(rr, "as_on") or page_vals.get("as_on")
 
                 # Parse and normalize amount to crores
+                # Detect unit from column header keys (e.g. "Rs in lakhs" → divide by 100)
+                _amount_unit = "crore"
+                for _col_key in rr.keys():
+                    _ck = str(_col_key).lower()
+                    if re.search(r'\blakhs?\b', _ck):
+                        _amount_unit = "lakh"
+                        break
                 parsed_amount = parse_amount_any(amount_txt)
+                if parsed_amount is not None and _amount_unit == "lakh":
+                    parsed_amount = round(parsed_amount / 100, 4)
                 normalized_amount = normalize_amount_to_crores(parsed_amount)
 
                 # Override LSP Name with the one from configuration (handles cases like CreditVidya on prefr.com)
@@ -1585,7 +1641,8 @@ def normalize_rows(
                 portfolio_clean = None
                 if portfolio_txt is not None:
                     portfolio_str = str(portfolio_txt).strip()
-                    if portfolio_str and portfolio_str != "None":
+                    # Treat dash/placeholder values (-, --, –) as empty/None
+                    if portfolio_str and portfolio_str != "None" and not re.fullmatch(r'[-–—]{1,3}', portfolio_str):
                         portfolio_clean = portfolio_str
 
                 ason = parse_date_any(ason_txt)
@@ -1760,8 +1817,9 @@ def merge_partial_rows(rows: List[dict[str, Any]]) -> List[dict[str, Any]]:
             # Calculate sum of all OTHER rows
             other_sum = sum(amt for j, (_, amt) in enumerate(row_amounts) if j != i)
 
-            # If current amount equals sum of others (within small tolerance for floating point)
-            if abs(current_amount - other_sum) < 0.01:
+            # If current amount equals sum of others (within small tolerance for floating point,
+            # allowing up to 0.05 Cr to handle display-rounding differences across rows)
+            if abs(current_amount - other_sum) <= 0.05:
                 sum_total_rows.add(id(current_row))
 
     # Second pass: filter out headers, totals, and sum totals
