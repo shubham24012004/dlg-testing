@@ -508,6 +508,27 @@ def extract_from_pdf(fetch: FetchResult, lsp_name: Optional[str] = None, rules: 
                             lines = [line for line in lines if
                                      not re.match(r'^Total\s*\d*\.?\d*$', line, re.IGNORECASE)]
 
+                            # Detect reversed layout: a data line (starts with loan type) followed by
+                            # a company/lender name line (no digits). E.g. page 2 of Bhanix:
+                            #   ["Personal Loan 1 5.44", "Apollo Finvest (India) Limited"]
+                            # → combine as "Apollo Finvest (India) Limited Personal Loan 1 5.44"
+                            _loan_type_re = re.compile(r'^(?:Personal|Business)\s+Loan\b', re.IGNORECASE)
+                            merged_lines = []
+                            i = 0
+                            while i < len(lines):
+                                current = lines[i]
+                                if (_loan_type_re.match(current)
+                                        and i + 1 < len(lines)
+                                        and not re.search(r'\d', lines[i + 1])
+                                        and not _loan_type_re.match(lines[i + 1])):
+                                    # Next line is a company name – prepend it so lender regex can match
+                                    merged_lines.append(f"{lines[i + 1]} {current}")
+                                    i += 2
+                                else:
+                                    merged_lines.append(current)
+                                    i += 1
+                            lines = merged_lines
+
                             for line in lines:
                                 # Create a new row for each line
                                 new_vals = vals.copy()
@@ -1173,9 +1194,12 @@ def parse_finagg_dlg_plain_text(
 
     rows: List[Dict[str, Any]] = []
 
-    # Extract date first
+    # Extract date first — try 'Portfolio OS as on' (old format) then plain 'as on'
     as_on_date = None
-    date_match = re.search(r"Portfolio OS as on ([0-9]{1,2}-[0-9]{1,2}-[0-9]{4})", text, re.IGNORECASE)
+    date_match = re.search(
+        r"(?:Portfolio\s+OS\s+as\s+on|as\s+on)\s+([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{4})",
+        text, re.IGNORECASE
+    )
     if date_match:
         date_str = date_match.group(1)
         as_on_date = parse_date_any(date_str)
@@ -1229,14 +1253,34 @@ def parse_finagg_dlg_plain_text(
 
                 rows.append({
                     "LSP Name": lsp_name,
-                    "Lender": "FinAGG Services Private Limited",
-                    "Portfolio": f"Portfolio {portfolio_num}",
+                    "Lender": f"Portfolio {portfolio_num}",
+                    "Portfolio": None,
                     "Amount": amount,
                     "AsOnTimestamp": as_on_date,
                     "ScrapeTimestamp": scrape_ts
                 })
             except ValueError:
                 pass  # Skip if amount can't be parsed
+
+        elif line.lower().startswith('portfolio'):
+            # Fallback: pdfplumber merged the portfolio number into the amount with no space
+            # e.g. "Portfolio 19,88,31,33,840 No" → Portfolio 1, amount 19,88,31,33,840
+            merged = re.match(r"Portfolio\s+(\d[\d,]+)\s+(Yes|No)\s*$", line, re.IGNORECASE)
+            if merged:
+                amount_raw = merged.group(1).replace(',', '').replace(' ', '')
+                try:
+                    amount = float(amount_raw)
+                    inferred_num = str(len(rows) + 1)
+                    rows.append({
+                        "LSP Name": lsp_name,
+                        "Lender": f"Portfolio {inferred_num}",
+                        "Portfolio": None,
+                        "Amount": amount,
+                        "AsOnTimestamp": as_on_date,
+                        "ScrapeTimestamp": scrape_ts
+                    })
+                except ValueError:
+                    pass
 
     return rows
 
@@ -1572,7 +1616,16 @@ def normalize_rows(
                 ason_txt = get_field(rr, "as_on") or page_vals.get("as_on")
 
                 # Parse and normalize amount to crores
+                # Detect unit from column header keys (e.g. "Rs in lakhs" → divide by 100)
+                _amount_unit = "crore"
+                for _col_key in rr.keys():
+                    _ck = str(_col_key).lower()
+                    if re.search(r'\blakhs?\b', _ck):
+                        _amount_unit = "lakh"
+                        break
                 parsed_amount = parse_amount_any(amount_txt)
+                if parsed_amount is not None and _amount_unit == "lakh":
+                    parsed_amount = round(parsed_amount / 100, 4)
                 normalized_amount = normalize_amount_to_crores(parsed_amount)
 
                 # Override LSP Name with the one from configuration (handles cases like CreditVidya on prefr.com)
