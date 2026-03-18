@@ -430,6 +430,8 @@ class ReportsManager:
                 })
             if(len(portfolios) < len(unique_lenders)):
                 no_of_portfolios = len(unique_lenders)
+            else:
+                no_of_portfolios = len(portfolios)
             return result, count, no_of_portfolios, amount, len(unique_lenders)
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
