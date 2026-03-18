@@ -1173,9 +1173,12 @@ def parse_finagg_dlg_plain_text(
 
     rows: List[Dict[str, Any]] = []
 
-    # Extract date first
+    # Extract date first — try 'Portfolio OS as on' (old format) then plain 'as on'
     as_on_date = None
-    date_match = re.search(r"Portfolio OS as on ([0-9]{1,2}-[0-9]{1,2}-[0-9]{4})", text, re.IGNORECASE)
+    date_match = re.search(
+        r"(?:Portfolio\s+OS\s+as\s+on|as\s+on)\s+([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{4})",
+        text, re.IGNORECASE
+    )
     if date_match:
         date_str = date_match.group(1)
         as_on_date = parse_date_any(date_str)
@@ -1229,7 +1232,7 @@ def parse_finagg_dlg_plain_text(
 
                 rows.append({
                     "LSP Name": lsp_name,
-                    "Lender": "FinAGG Services Private Limited",
+                    "Lender": None,
                     "Portfolio": f"Portfolio {portfolio_num}",
                     "Amount": amount,
                     "AsOnTimestamp": as_on_date,
@@ -1237,6 +1240,26 @@ def parse_finagg_dlg_plain_text(
                 })
             except ValueError:
                 pass  # Skip if amount can't be parsed
+
+        elif line.lower().startswith('portfolio'):
+            # Fallback: pdfplumber merged the portfolio number into the amount with no space
+            # e.g. "Portfolio 19,88,31,33,840 No" → Portfolio 1, amount 19,88,31,33,840
+            merged = re.match(r"Portfolio\s+(\d[\d,]+)\s+(Yes|No)\s*$", line, re.IGNORECASE)
+            if merged:
+                amount_raw = merged.group(1).replace(',', '').replace(' ', '')
+                try:
+                    amount = float(amount_raw)
+                    inferred_num = str(len(rows) + 1)
+                    rows.append({
+                        "LSP Name": lsp_name,
+                        "Lender": None,
+                        "Portfolio": f"Portfolio {inferred_num}",
+                        "Amount": amount,
+                        "AsOnTimestamp": as_on_date,
+                        "ScrapeTimestamp": scrape_ts
+                    })
+                except ValueError:
+                    pass
 
     return rows
 
