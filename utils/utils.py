@@ -1223,9 +1223,7 @@ def parse_finagg_dlg_plain_text(
         if match:
             portfolio_num = match.group(1)
             # Handle OCR artifacts
-            if portfolio_num.lower() == 'l':
-                portfolio_num = '1'
-
+            portfolio_num = portfolio_num.replace('l', '1').replace('L', '1')
             amount_str = match.group(2)  # Amount on same line (if present)
             fldg = match.group(3)  # FLDG status
 
@@ -1250,6 +1248,9 @@ def parse_finagg_dlg_plain_text(
                 # Skip the Total row
                 if 'total' in portfolio_num.lower() or amount > 7000000000:  # Total is usually very large
                     continue
+                
+                if not fldg or fldg.lower() != 'yes':
+                    continue
 
                 rows.append({
                     "LSP Name": lsp_name,
@@ -1268,6 +1269,9 @@ def parse_finagg_dlg_plain_text(
             merged = re.match(r"Portfolio\s+(\d[\d,]+)\s+(Yes|No)\s*$", line, re.IGNORECASE)
             if merged:
                 amount_raw = merged.group(1).replace(',', '').replace(' ', '')
+                fldg = merged.group(2)  # FLDG status
+                if not fldg or fldg.lower() != 'yes':
+                    continue
                 try:
                     amount = float(amount_raw)
                     inferred_num = str(len(rows) + 1)
@@ -1594,6 +1598,16 @@ def normalize_rows(
 
     try:
         for rr in raw_rows:
+            row_filter = rules.get("row_filter")
+            if row_filter:
+                col = row_filter.get("column")
+                val = row_filter.get("value")
+                ci  = row_filter.get("case_insensitive", True)
+                cell = rr.get(col, "")
+                cell_cmp = str(cell).strip().lower() if ci else str(cell).strip()
+                val_cmp  = str(val).strip().lower()  if ci else str(val).strip()
+                if cell_cmp != val_cmp:
+                    continue
             # Check if row is already normalized (has capital-case keys from plain_text parsers)
             # Plain text parsers like extract_from_regex_patterns and parse_cred_style_dlg_plain_text
             # return pre-normalized rows with keys: LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp

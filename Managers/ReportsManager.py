@@ -112,17 +112,28 @@ class ReportsManager:
                 dlg_url = grp['dlg_url'].iloc[0]
 
             total_amount = float(grp["amount"].fillna(0.0).sum())
-            if "portfolio" in grp.columns:
-                total_portfolios = int(grp.loc[grp["portfolio"].notna() & (grp["portfolio"] != ""), "portfolio"].nunique())
-            else:
-                total_portfolios = int(grp.shape[0])
 
             if "lender" in grp.columns:
                 total_lenders = int(grp.loc[grp["lender"].notna() & (grp["lender"] != ""), "lender"].nunique())
             else:
                 total_lenders = int(grp.shape[0])
 
-            if total_portfolios < total_lenders:
+            if "portfolio" in grp.columns and "lender" in grp.columns:
+                # Forward-fill lender within the group so sub-portfolio rows that
+                # stored lender=None still get associated with the correct lender.
+                filled_lender = grp["lender"].replace("", None).ffill()
+                has_portfolio = grp["portfolio"].notna() & (grp["portfolio"] != "")
+                # Count distinct (lender, portfolio) pairs; fall back to lenders
+                # only when the entire group has no named portfolios.
+                if has_portfolio.any():
+                    pairs = set(zip(filled_lender[has_portfolio], grp.loc[has_portfolio, "portfolio"]))
+                    total_portfolios = len(pairs)
+                else:
+                    total_portfolios = total_lenders
+            elif "portfolio" in grp.columns:
+                has_portfolio = grp["portfolio"].notna() & (grp["portfolio"] != "")
+                total_portfolios = int(has_portfolio.sum()) if has_portfolio.any() else total_lenders
+            else:
                 total_portfolios = total_lenders
             last_scrape = None
             if grp["scrape_timestamp"].notna().any():
@@ -409,9 +420,21 @@ class ReportsManager:
             portfolios = set()
             amount = 0
             unique_lenders = set()
+            last_lender = None
             for r in rows:
+                # Forward-fill lender so sub-portfolio rows without a lender value
+                # still get associated with the correct lender.
+                effective_lender = r.lender if r.lender else last_lender
+                if r.lender:
+                    last_lender = r.lender
+
+                # Count a portfolio only when the portfolio name is present.
+                # Rows with a lender but no portfolio (e.g. summary/spacer rows)
+                # are intentionally excluded.  Rows with no lender but a non-empty
+                # portfolio are still counted (using the forward-filled lender).
                 if r.portfolio:
-                    portfolios.add(r.portfolio)
+                    portfolios.add((effective_lender, r.portfolio))
+
                 amt = float(r.amount) if r.amount is not None else 0.0
                 amount = amount + amt
                 if r.lender:
@@ -428,10 +451,7 @@ class ReportsManager:
                     "dlg_url": r.dlg_url,
                     "complete": r.complete,
                 })
-            if(len(portfolios) < len(unique_lenders)):
-                no_of_portfolios = len(unique_lenders)
-            else:
-                no_of_portfolios = len(portfolios)
+            no_of_portfolios = len(portfolios) if portfolios else len(unique_lenders)
             return result, count, no_of_portfolios, amount, len(unique_lenders)
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
