@@ -1419,6 +1419,32 @@ def page_level_values(fetch: FetchResult, rules: Dict[str, Any]) -> Dict[str, An
         raise RuntimeError(f"Error extracting page-level values: {ex}")
 
 
+def get_month_window(ts) -> Optional[Tuple[int, int]]:
+    """Return (year, month) window for a scrape timestamp using the 8th-of-month boundary.
+
+    Records scraped before the 8th belong to the previous month's window.
+    Records scraped on or after the 8th belong to the current month's window.
+
+    Returns None if ts is None or NaT.
+    """
+    if ts is None:
+        return None
+    try:
+        import pandas as pd
+        if pd.isna(ts):
+            return None
+    except (TypeError, ValueError):
+        pass
+    day = ts.day
+    month = ts.month
+    year = ts.year
+    if day < 8:
+        if month == 1:
+            return year - 1, 12
+        return year, month - 1
+    return year, month
+
+
 def normalize_rows(
         raw_rows: List[Dict[str, Any]],
         fetch: FetchResult,
@@ -1719,11 +1745,29 @@ def normalize_rows(
         error = str(ex)
         return CrawlStatus.ERROR, final_data, error
 
+    # Compute expected as_on month from scrape_ts using the shared month window boundary
+    window = get_month_window(scrape_ts)
+    if window:
+        win_year, win_month = window
+        expected_ason_year = win_year - 1 if win_month == 1 else win_year
+        expected_ason_month = 12 if win_month == 1 else win_month - 1
+    else:
+        expected_ason_year, expected_ason_month = None, None
+
     for r in final_data:
         if r["Portfolio"] is None or r["Amount"] is None:
             return CrawlStatus.PARTIAL, final_data, "Missing portfolio or amount in some rows"
         if r["AsOnTimestamp"] is None:
             return CrawlStatus.STALE, final_data, "Missing as-on date in some rows - data may be stale"
+        if expected_ason_month is not None:
+            ason = r["AsOnTimestamp"]
+            if ason.year != expected_ason_year or ason.month != expected_ason_month:
+                return (
+                    CrawlStatus.STALE,
+                    final_data,
+                    f"As-on date {ason.strftime('%Y-%m')} does not match expected "
+                    f"{expected_ason_year}-{expected_ason_month:02d}",
+                )
     return CrawlStatus.COMPLETED, final_data, "All rows complete"
 
 

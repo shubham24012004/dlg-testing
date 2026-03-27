@@ -106,9 +106,9 @@ class ReportsService:
         """
         user_info = f"[User: {self.user_claims.get('username') if self.user_claims else 'system'}, Role: {self.user_claims.get('role') if self.user_claims else 'unknown'}]"
         try:
-            result, count, portfolio_count, amount, lenders_count = self.reports_manager.get_raw_data(lsp_id, month=month, year=year)
+            result, count, portfolio_count, amount, lenders_count, message = self.reports_manager.get_raw_data(lsp_id, month=month, year=year)
             self.logger.info(f"{user_info} Fetched {count} raw rows for LSP ID: {lsp_id}")
-            return result, count, portfolio_count, amount, lenders_count
+            return result, count, portfolio_count, amount, lenders_count, message
         except Exception as exc:
             self.logger.exception(f"{user_info} Error fetching raw data for LSP ID {lsp_id}: {exc}")
             raise
