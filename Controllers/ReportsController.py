@@ -60,7 +60,7 @@ def summarize_lsp():
         # Normalize dates using pandas (dayfirst=True for DD/MM/YYYY or DD-MM-YYYY format)
         try:
             start_dt = pd.to_datetime(start_date, dayfirst=True)
-            end_dt = pd.to_datetime(end_date, dayfirst=True)
+            end_dt = pd.to_datetime(end_date, dayfirst=True) + pd.Timedelta(days=1)
         except Exception as e:
             logger.warning(f"{user_info} Invalid date format: {e}")
             return jsonify(

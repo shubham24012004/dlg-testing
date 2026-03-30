@@ -90,7 +90,7 @@ def cron_run_lsp_summarize() -> None:
     """
     today = datetime.now()
     start_dt = today - timedelta(days=30)
-    end_dt = today
+    end_dt = today + timedelta(days=1)
     logger.info(f"Cron: starting LSP summarization {start_dt.date()} → {end_dt.date()}")
     try:
         reports_service = ReportsService(user_claims=None)

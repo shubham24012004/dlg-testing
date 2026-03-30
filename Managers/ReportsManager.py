@@ -5,6 +5,7 @@ import pandas as pd
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.report_models import Base, LspSummary
 from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus, LspMaster, AuditLog
+from utils.constants import AuditAction
 from utils.logger_config import logger_method
 from utils.utils import get_month_window
 from sqlalchemy import String, and_, or_, func, extract
@@ -351,6 +352,7 @@ class ReportsManager:
                 AuditLog, 
                 and_(
                     LspSummary.lsp_id == AuditLog.lsp_id,
+                    AuditLog.action_taken == AuditAction.CRAWL.value,
                     extract('year', LspSummary.last_crawl_date) == extract('year', AuditLog.log_timestamp),
                     extract('month', LspSummary.last_crawl_date) == extract('month', AuditLog.log_timestamp),
                     extract('day', LspSummary.last_crawl_date) == extract('day', AuditLog.log_timestamp),
