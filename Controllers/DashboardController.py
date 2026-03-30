@@ -117,7 +117,7 @@ def lsp_raw():
     try:
         logger.info(f"{user_info} Getting LSP raw data for LSP ID: {lsp_id} for Dashboard")
         reports_service = ReportsService(user_claims)
-        result, count, portfolio_count, amount, lenders_count = reports_service.get_raw_data(lsp_id, month=month,
+        result, count, portfolio_count, amount, lenders_count, message = reports_service.get_raw_data(lsp_id, month=month,
                                                                                              year=year)
 
         logger.info(f"{user_info} Get LSP raw data completed: {count} rows returned for LSP ID: {lsp_id}")
@@ -126,7 +126,7 @@ def lsp_raw():
             "message": "LSP raw data retrieval completed successfully",
             "user_info": user_info,
             "data": {"result": result, "count": count, "portfolio_count": portfolio_count, "amount": amount,
-                     "lenders_count": lenders_count}
+                     "lenders_count": lenders_count, "info": message}
         }), HTTPStatus.OK
 
     except Exception as exc:

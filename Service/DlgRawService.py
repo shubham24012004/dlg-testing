@@ -5,7 +5,8 @@ import datetime as dt
 from typing import Optional, Tuple, Dict, Any
 
 from utils.logger_config import logger_method
-from utils.constants import AuditAction
+from utils.constants import AuditAction, CrawlStatus
+from utils.utils import get_month_window
 from Managers.DlgRawManager import DlgRawManager
 from Managers.LspMasterManager import LspMasterManager
 from Service.AuditLogService import AuditLogService
@@ -35,8 +36,28 @@ class DlgRawService:
                 raise Exception(f"LSP with id={raw_input.lsp_id} not found or inactive")
             lsp = lsp_records[0]
             raw_input.lsp_name = lsp["name"]
-            raw_input.complete = "Completed"
             raw_input.scrape_timestamp = dt.datetime.now(tz=dt.timezone.utc)
+
+            # Compute status based on field values and temporal freshness
+            if raw_input.portfolio is None or raw_input.amount is None:
+                raw_input.complete = CrawlStatus.PARTIAL.value
+            elif raw_input.as_on_timestamp is None:
+                raw_input.complete = CrawlStatus.STALE.value
+            else:
+                window = get_month_window(raw_input.scrape_timestamp)
+                if window:
+                    win_year, win_month = window
+                    exp_year = win_year - 1 if win_month == 1 else win_year
+                    exp_month = 12 if win_month == 1 else win_month - 1
+                    ason = raw_input.as_on_timestamp
+                    if isinstance(ason, str):
+                        ason = dt.datetime.fromisoformat(ason)
+                    if ason.year != exp_year or ason.month != exp_month:
+                        raw_input.complete = CrawlStatus.STALE.value
+                    else:
+                        raw_input.complete = CrawlStatus.COMPLETED.value
+                else:
+                    raw_input.complete = CrawlStatus.COMPLETED.value
 
             result = self.raw_manager.insert(raw_input)
             user_id = self.user_claims.get('username') if self.user_claims else "system"

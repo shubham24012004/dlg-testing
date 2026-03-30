@@ -1223,9 +1223,7 @@ def parse_finagg_dlg_plain_text(
         if match:
             portfolio_num = match.group(1)
             # Handle OCR artifacts
-            if portfolio_num.lower() == 'l':
-                portfolio_num = '1'
-
+            portfolio_num = portfolio_num.replace('l', '1').replace('L', '1')
             amount_str = match.group(2)  # Amount on same line (if present)
             fldg = match.group(3)  # FLDG status
 
@@ -1250,6 +1248,9 @@ def parse_finagg_dlg_plain_text(
                 # Skip the Total row
                 if 'total' in portfolio_num.lower() or amount > 7000000000:  # Total is usually very large
                     continue
+                
+                if not fldg or fldg.lower() != 'yes':
+                    continue
 
                 rows.append({
                     "LSP Name": lsp_name,
@@ -1268,6 +1269,9 @@ def parse_finagg_dlg_plain_text(
             merged = re.match(r"Portfolio\s+(\d[\d,]+)\s+(Yes|No)\s*$", line, re.IGNORECASE)
             if merged:
                 amount_raw = merged.group(1).replace(',', '').replace(' ', '')
+                fldg = merged.group(2)  # FLDG status
+                if not fldg or fldg.lower() != 'yes':
+                    continue
                 try:
                     amount = float(amount_raw)
                     inferred_num = str(len(rows) + 1)
@@ -1413,6 +1417,32 @@ def page_level_values(fetch: FetchResult, rules: Dict[str, Any]) -> Dict[str, An
         return out
     except Exception as ex:
         raise RuntimeError(f"Error extracting page-level values: {ex}")
+
+
+def get_month_window(ts) -> Optional[Tuple[int, int]]:
+    """Return (year, month) window for a scrape timestamp using the 8th-of-month boundary.
+
+    Records scraped before the 8th belong to the previous month's window.
+    Records scraped on or after the 8th belong to the current month's window.
+
+    Returns None if ts is None or NaT.
+    """
+    if ts is None:
+        return None
+    try:
+        import pandas as pd
+        if pd.isna(ts):
+            return None
+    except (TypeError, ValueError):
+        pass
+    day = ts.day
+    month = ts.month
+    year = ts.year
+    if day < 8:
+        if month == 1:
+            return year - 1, 12
+        return year, month - 1
+    return year, month
 
 
 def normalize_rows(
@@ -1594,6 +1624,16 @@ def normalize_rows(
 
     try:
         for rr in raw_rows:
+            row_filter = rules.get("row_filter")
+            if row_filter:
+                col = row_filter.get("column")
+                val = row_filter.get("value")
+                ci  = row_filter.get("case_insensitive", True)
+                cell = rr.get(col, "")
+                cell_cmp = str(cell).strip().lower() if ci else str(cell).strip()
+                val_cmp  = str(val).strip().lower()  if ci else str(val).strip()
+                if cell_cmp != val_cmp:
+                    continue
             # Check if row is already normalized (has capital-case keys from plain_text parsers)
             # Plain text parsers like extract_from_regex_patterns and parse_cred_style_dlg_plain_text
             # return pre-normalized rows with keys: LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
@@ -1705,11 +1745,29 @@ def normalize_rows(
         error = str(ex)
         return CrawlStatus.ERROR, final_data, error
 
+    # Compute expected as_on month from scrape_ts using the shared month window boundary
+    window = get_month_window(scrape_ts)
+    if window:
+        win_year, win_month = window
+        expected_ason_year = win_year - 1 if win_month == 1 else win_year
+        expected_ason_month = 12 if win_month == 1 else win_month - 1
+    else:
+        expected_ason_year, expected_ason_month = None, None
+
     for r in final_data:
         if r["Portfolio"] is None or r["Amount"] is None:
             return CrawlStatus.PARTIAL, final_data, "Missing portfolio or amount in some rows"
         if r["AsOnTimestamp"] is None:
             return CrawlStatus.STALE, final_data, "Missing as-on date in some rows - data may be stale"
+        if expected_ason_month is not None:
+            ason = r["AsOnTimestamp"]
+            if ason.year != expected_ason_year or ason.month != expected_ason_month:
+                return (
+                    CrawlStatus.STALE,
+                    final_data,
+                    f"As-on date {ason.strftime('%Y-%m')} does not match expected "
+                    f"{expected_ason_year}-{expected_ason_month:02d}",
+                )
     return CrawlStatus.COMPLETED, final_data, "All rows complete"
 
 
