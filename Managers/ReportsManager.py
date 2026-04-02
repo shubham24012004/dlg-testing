@@ -1,13 +1,10 @@
 from typing import Optional, Dict
-import datetime as dt
 import pandas as pd
 
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.report_models import Base, LspSummary
 from DatabaseOperation.DatabaseModels.master_models import DlgRaw, CrawlStatus, LspMaster, AuditLog
-from utils.constants import AuditAction
 from utils.logger_config import logger_method
-from utils.utils import get_month_window
 from sqlalchemy import String, and_, or_, func, extract
 
 
@@ -41,9 +38,15 @@ class ReportsManager:
         user_info = self._get_user_info()
 
         # Query DlgRaw rows from DB in the date range. scrape_timestamp between start_date and end_date
+        # Normalize input for safer DB filtering and logging.
+        start_ts = pd.to_datetime(start_date, errors="coerce")
+        end_ts = pd.to_datetime(end_date, errors="coerce")
+        query_start = start_ts.to_pydatetime() if pd.notnull(start_ts) else start_date
+        query_end = end_ts.to_pydatetime() if pd.notnull(end_ts) else end_date
+
         session = self.conn_factory.get_session()
         try:
-            rows = session.query(DlgRaw).filter(DlgRaw.scrape_timestamp.between(start_date, end_date)).all()
+            rows = session.query(DlgRaw).filter(DlgRaw.scrape_timestamp.between(query_start, query_end)).all()
         except Exception as e:
             session.close()
             self.logger.error(f"{user_info} Failed to query DlgRaw rows: {e}")
@@ -76,47 +79,122 @@ class ReportsManager:
             df["as_on_timestamp"] = pd.to_datetime(df["as_on_timestamp"], errors="coerce")
         df["scrape_timestamp"] = pd.to_datetime(df["scrape_timestamp"], errors="coerce")
 
+        # rows without scrape_timestamp cannot be bucketed into month windows
+        null_scrape_count = int(df["scrape_timestamp"].isna().sum())
+        if null_scrape_count:
+            self.logger.warning(
+                f"{user_info} Ignoring {null_scrape_count} rows with null scrape_timestamp in summary window"
+            )
+        df = df[df["scrape_timestamp"].notna()].copy()
+        if df.empty:
+            session.close()
+            self.logger.info(f"{user_info} No valid raw rows in date range after filtering null scrape timestamps")
+            return 0
+
         # Add a column to determine the month window each record belongs to
         # Records between 8th of month X to 8th of month X+1 belong to month X
+        def get_month_window(ts):
+            """Return (year, month) for the month window this timestamp belongs to."""
+            if pd.isna(ts):
+                return None
+            day = ts.day
+            month = ts.month
+            year = ts.year
+            # If day >= 8, this record belongs to the current month window
+            # If day < 8, it belongs to the previous month window
+            if day < 8:
+                if month == 1:
+                    return year - 1, 12
+                else:
+                    return year, month - 1
+            else:
+                return year, month
+
         df["month_window"] = df["scrape_timestamp"].apply(get_month_window)
 
-        # group by lsp_id, lsp_name, and month_window
-        grouped = df.groupby(["lsp_id", "lsp_name", "month_window"])
+        def _normalize_text_series(series: pd.Series) -> pd.Series:
+            return (
+                series.fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+        def _pick_name(group_df: pd.DataFrame) -> str:
+            # Choose the latest non-empty lsp_name in the month window for deterministic naming.
+            ordered = group_df.sort_values("scrape_timestamp", ascending=False)
+            names = _normalize_text_series(ordered["lsp_name"])
+            names = names[names != ""]
+            if not names.empty:
+                return str(names.iloc[0])
+            return f"LSP-{int(group_df['lsp_id'].iloc[0])}"
+
+        def _pick_url(group_df: pd.DataFrame) -> Optional[str]:
+            ordered = group_df.sort_values("scrape_timestamp", ascending=False)
+            urls = _normalize_text_series(ordered["dlg_url"])
+            urls = urls[urls != ""]
+            return str(urls.iloc[0]) if not urls.empty else None
+
+        def _status_rank(status: CrawlStatus) -> int:
+            # Higher means more severe.
+            rank_map = {
+                CrawlStatus.ERROR: 6,
+                CrawlStatus.MISSING: 5,
+                CrawlStatus.NO_DATA: 4,
+                CrawlStatus.STALE: 3,
+                CrawlStatus.PARTIAL: 2,
+                CrawlStatus.COMPLETED: 1,
+            }
+            return rank_map.get(status, 0)
+
+        def _parse_status(value) -> Optional[CrawlStatus]:
+            if value is None:
+                return None
+            text = str(value).strip()
+            if not text:
+                return None
+            try:
+                return CrawlStatus(text)
+            except ValueError:
+                self.logger.warning(f"{user_info} Unknown crawl status '{text}' found in raw data")
+                return None
+
+        # group by lsp_id and month_window only, to avoid duplicates from name drift.
+        grouped = df.groupby(["lsp_id", "month_window"], dropna=False)
 
         summaries = []
-        # Pre-compute non-data statuses that should be preserved as-is
-        _non_data_statuses = {CrawlStatus.MISSING.value, CrawlStatus.ERROR.value, CrawlStatus.NO_DATA.value}
+        for (lsp_id, month_window), grp in grouped:
+            if not isinstance(month_window, tuple):
+                continue
 
-        for (lsp_id, name, month_window), grp in grouped:
             status: CrawlStatus = CrawlStatus.MISSING
             total_amount = 0.0
             total_portfolios = 0
+            total_lenders = 0
+            name = _pick_name(grp)
 
-            dlg_url = None
-            if grp['dlg_url'].notna().any():
-                dlg_url = grp['dlg_url'].iloc[0]
+            parsed_statuses = [
+                parsed for parsed in (_parse_status(s) for s in grp["status"].tolist()) if parsed is not None
+            ]
+            if parsed_statuses:
+                status = max(parsed_statuses, key=_status_rank)
+
+            dlg_url = _pick_url(grp)
 
             total_amount = float(grp["amount"].fillna(0.0).sum())
+            if "portfolio" in grp.columns:
+                normalized_portfolio = _normalize_text_series(grp["portfolio"])
+                total_portfolios = int(normalized_portfolio[normalized_portfolio != ""].nunique())
+            else:
+                total_portfolios = int(grp.shape[0])
 
             if "lender" in grp.columns:
-                total_lenders = int(grp.loc[grp["lender"].notna() & (grp["lender"] != ""), "lender"].nunique())
+                normalized_lender = _normalize_text_series(grp["lender"]).str.lower()
+                total_lenders = int(normalized_lender[normalized_lender != ""].nunique())
             else:
                 total_lenders = int(grp.shape[0])
 
-            if "portfolio" in grp.columns and "lender" in grp.columns:
-                filled_lender = grp["lender"].replace("", None).ffill()
-                has_portfolio = grp["portfolio"].notna() & (grp["portfolio"] != "")
-                if has_portfolio.any():
-                    pairs = set(zip(filled_lender[has_portfolio], grp.loc[has_portfolio, "portfolio"]))
-                    total_portfolios = len(pairs)
-                else:
-                    total_portfolios = total_lenders
-            elif "portfolio" in grp.columns:
-                has_portfolio = grp["portfolio"].notna() & (grp["portfolio"] != "")
-                total_portfolios = int(has_portfolio.sum()) if has_portfolio.any() else total_lenders
-            else:
+            if total_portfolios < total_lenders:
                 total_portfolios = total_lenders
-
             last_scrape = None
             if grp["scrape_timestamp"].notna().any():
                 last_scrape = grp["scrape_timestamp"].max()
@@ -129,36 +207,38 @@ class ReportsManager:
             scrape_year = month_window[0]
             scrape_month = month_window[1]
 
-            if last_ason:
+            if last_ason is not None:
                 as_on_year = int(last_ason.year)
                 as_on_month = int(last_ason.month)
             else:
-                as_on_year = 0
-                as_on_month = 0
+                as_on_year = None
+                as_on_month = None
 
-            # If all rows are non-data (MISSING / ERROR / NO_DATA), preserve stored status
-            stored_statuses = grp["status"].dropna().unique().tolist()
-            all_non_data = stored_statuses and all(s in _non_data_statuses for s in stored_statuses)
-            if all_non_data:
-                try:
-                    status = CrawlStatus(stored_statuses[0])
-                except ValueError:
-                    status = CrawlStatus.MISSING
-            else:
-                # Derive status purely from temporal freshness
+            # Validate: as_on_timestamp should be from the previous month of scrape_timestamp
+            # If not, mark status as "Stale"
+            is_stale_by_date = False
+            if last_scrape is not None:
+                # Calculate previous month
                 if scrape_month == 1:
-                    expected_ason_year, expected_ason_month = scrape_year - 1, 12
+                    prev_year = scrape_year - 1
+                    prev_month = 12
                 else:
-                    expected_ason_year, expected_ason_month = scrape_year, scrape_month - 1
+                    prev_year = scrape_year
+                    prev_month = scrape_month - 1
 
-                if not last_ason:
+                # Check if as_on_timestamp is from the previous month.
+                # Missing as_on is stale unless the crawl itself failed/no-data/missing.
+                if last_ason is None:
+                    is_stale_by_date = True
+                elif as_on_year != prev_year or as_on_month != prev_month:
+                    is_stale_by_date = True
+
+                if is_stale_by_date and status in {
+                    CrawlStatus.COMPLETED,
+                    CrawlStatus.PARTIAL,
+                    CrawlStatus.STALE,
+                }:
                     status = CrawlStatus.STALE
-                elif as_on_year != expected_ason_year or as_on_month != expected_ason_month:
-                    status = CrawlStatus.STALE
-                elif grp["portfolio"].isna().any() or grp["amount"].isna().any():
-                    status = CrawlStatus.PARTIAL
-                else:
-                    status = CrawlStatus.COMPLETED
 
             summaries.append({
                 "lsp_id": int(lsp_id),
@@ -175,103 +255,88 @@ class ReportsManager:
                 "last_crawl_date": pd.to_datetime(last_scrape).to_pydatetime() if pd.notnull(last_scrape) else None,
             })
 
-        # -----------------------------------------------------------------------
-        # Rolling stale: for each month window covered by this run, add STALE
-        # entries for active LSPs that have NO rows in that window but DO have
-        # historical raw data (their latest crawl is therefore outdated).
-        # -----------------------------------------------------------------------
-        distinct_windows = {(s["scrape_year"], s["scrape_month"]) for s in summaries}
-        lsps_in_summaries_by_window: dict = {}
-        for s in summaries:
-            key = (s["scrape_year"], s["scrape_month"])
-            lsps_in_summaries_by_window.setdefault(key, set()).add(s["lsp_id"])
-
-        # Fetch globally latest raw row per lsp_id (single query)
-        max_scrape_subq = (
-            session.query(
-                DlgRaw.lsp_id,
-                func.max(DlgRaw.scrape_timestamp).label("max_scrape"),
-            )
-            .group_by(DlgRaw.lsp_id)
-            .subquery()
-        )
-        latest_rows = (
-            session.query(DlgRaw)
-            .join(
-                max_scrape_subq,
-                and_(
-                    DlgRaw.lsp_id == max_scrape_subq.c.lsp_id,
-                    DlgRaw.scrape_timestamp == max_scrape_subq.c.max_scrape,
-                ),
-            )
-            .all()
-        )
-        # Keep one row per lsp_id (handle max-timestamp ties)
-        latest_by_lsp: dict = {}
-        for r in latest_rows:
-            if r.lsp_id not in latest_by_lsp:
-                latest_by_lsp[r.lsp_id] = r
-
-        active_lsps = session.query(LspMaster).filter(LspMaster.active == True).all()
-
-        for win_year, win_month in distinct_windows:
-            if win_month == 1:
-                exp_ason_year, exp_ason_month = win_year - 1, 12
-            else:
-                exp_ason_year, exp_ason_month = win_year, win_month - 1
-
-            lsps_in_window = lsps_in_summaries_by_window.get((win_year, win_month), set())
-
-            for lsp in active_lsps:
-                if lsp.id in lsps_in_window:
-                    continue  # Already summarised for this window
-
-                latest = latest_by_lsp.get(lsp.id)
-                if latest is None:
-                    continue  # Never crawled — skip
-
-                stored = latest.complete
-                if stored in _non_data_statuses:
-                    try:
-                        roll_status = CrawlStatus(stored)
-                    except ValueError:
-                        roll_status = CrawlStatus.MISSING
-                elif latest.as_on_timestamp is None:
-                    roll_status = CrawlStatus.STALE
-                else:
-                    ason = latest.as_on_timestamp
-                    if ason.year != exp_ason_year or ason.month != exp_ason_month:
-                        roll_status = CrawlStatus.STALE
-                    else:
-                        roll_status = CrawlStatus.COMPLETED
-
-                roll_ason_year = int(latest.as_on_timestamp.year) if latest.as_on_timestamp else 0
-                roll_ason_month = int(latest.as_on_timestamp.month) if latest.as_on_timestamp else 0
-
-                summaries.append({
-                    "lsp_id": int(lsp.id),
-                    "name": str(lsp.name),
-                    "total_portfolios": 0,
-                    "total_lenders": 0,
-                    "total_amount": 0.0,
-                    "as_on_year": roll_ason_year,
-                    "as_on_month": roll_ason_month,
-                    "scrape_year": win_year,
-                    "scrape_month": win_month,
-                    "status": roll_status,
-                    "dlg_url": lsp.dlg_url,
-                    "last_crawl_date": latest.scrape_timestamp,
-                })
-
         session.close()
+
+        # On/after the 10th, if an LSP has no summary for the target month,
+        # backfill it from the previous available month and mark it as stale.
+        if pd.notnull(end_ts) and int(end_ts.day) >= 10:
+            target_month_window = get_month_window(end_ts)
+            if isinstance(target_month_window, tuple):
+                target_year, target_month = target_month_window
+                existing_keys = {
+                    (int(s["lsp_id"]), int(s["scrape_year"]), int(s["scrape_month"]))
+                    for s in summaries
+                }
+
+                session = self.conn_factory.get_session()
+                try:
+                    lsp_rows = session.query(LspMaster.id, LspMaster.name, LspMaster.active).all()
+                    for lsp in lsp_rows:
+                        if hasattr(lsp, "active") and lsp.active is False:
+                            continue
+
+                        lsp_id = int(lsp.id)
+                        target_key = (lsp_id, int(target_year), int(target_month))
+                        if target_key in existing_keys:
+                            continue
+
+                        previous = (
+                            session.query(LspSummary)
+                            .filter(LspSummary.lsp_id == lsp_id)
+                            .filter(
+                                or_(
+                                    LspSummary.scrape_year < target_year,
+                                    and_(
+                                        LspSummary.scrape_year == target_year,
+                                        LspSummary.scrape_month < target_month,
+                                    ),
+                                )
+                            )
+                            .order_by(
+                                LspSummary.scrape_year.desc(),
+                                LspSummary.scrape_month.desc(),
+                                LspSummary.id.desc(),
+                            )
+                            .first()
+                        )
+
+                        if previous is None:
+                            continue
+
+                        summaries.append({
+                            "lsp_id": lsp_id,
+                            "name": str(previous.name) if previous.name else str(getattr(lsp, "name", f"LSP-{lsp_id}")),
+                            "total_portfolios": int(
+                                previous.total_portfolios) if previous.total_portfolios is not None else 0,
+                            "total_lenders": int(previous.total_lenders) if previous.total_lenders is not None else 0,
+                            "total_amount": float(previous.total_amount) if previous.total_amount is not None else 0.0,
+                            "as_on_year": int(previous.as_on_year) if previous.as_on_year is not None else None,
+                            "as_on_month": int(previous.as_on_month) if previous.as_on_month is not None else None,
+                            "scrape_year": int(target_year),
+                            "scrape_month": int(target_month),
+                            "status": CrawlStatus.STALE,
+                            "dlg_url": previous.dlg_url,
+                            "last_crawl_date": previous.last_crawl_date,
+                        })
+                        existing_keys.add(target_key)
+                finally:
+                    session.close()
 
         # upsert into DB
         session = self.conn_factory.get_session()
         upserted = 0
         try:
             for s in summaries:
-                duplicates = session.query(LspSummary).filter_by(lsp_id=s["lsp_id"], scrape_year=s["scrape_year"],
-                                                                  scrape_month=s["scrape_month"]).all()
+                duplicates = (
+                    session.query(LspSummary)
+                    .filter_by(
+                        lsp_id=s["lsp_id"],
+                        scrape_year=s["scrape_year"],
+                        scrape_month=s["scrape_month"],
+                    )
+                    .order_by(LspSummary.id.asc())
+                    .all()
+                )
                 # Delete extra duplicates, keep only the first
                 if len(duplicates) > 1:
                     for dup in duplicates[1:]:
@@ -312,8 +377,10 @@ class ReportsManager:
                     session.add(rec)
                 upserted += 1
             session.commit()
+            log_start = start_ts.date().isoformat() if pd.notnull(start_ts) else str(start_date)
+            log_end = end_ts.date().isoformat() if pd.notnull(end_ts) else str(end_date)
             self.logger.info(
-                f"{user_info} Upserted {upserted} LSP summary rows for {start_date.date()} - {end_date.date()}")
+                f"{user_info} Upserted {upserted} LSP summary rows for {log_start} - {log_end}")
             return upserted
         except Exception as e:
             session.rollback()
@@ -349,10 +416,9 @@ class ReportsManager:
                 AuditLog.auto_manual.label("auto_manual"),
                 AuditLog.payload.label("payload")
             ).join(LspMaster, LspSummary.lsp_id == LspMaster.id).outerjoin(
-                AuditLog, 
+                AuditLog,
                 and_(
                     LspSummary.lsp_id == AuditLog.lsp_id,
-                    AuditLog.action_taken == AuditAction.CRAWL.value,
                     extract('year', LspSummary.last_crawl_date) == extract('year', AuditLog.log_timestamp),
                     extract('month', LspSummary.last_crawl_date) == extract('month', AuditLog.log_timestamp),
                     extract('day', LspSummary.last_crawl_date) == extract('day', AuditLog.log_timestamp),
@@ -444,7 +510,7 @@ class ReportsManager:
 
             if status is not None:
                 query = query.filter(subq.c.status == status)
-            
+
             if lsp_name is not None:
                 query = query.filter(subq.c.name.ilike(f"%{lsp_name}%"))
 
@@ -487,59 +553,22 @@ class ReportsManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(DlgRaw).filter(DlgRaw.lsp_id == lsp_id).order_by(DlgRaw.scrape_timestamp.desc())
-
-            # Filter by month window (8th of month to 7th of next month) rather than
-            # calendar month, so the raw API aligns with how summaries are grouped.
-            if month is not None and year is not None:
-                if month == 12:
-                    next_month, next_year = 1, year + 1
-                else:
-                    next_month, next_year = month + 1, year
-                query = query.filter(
-                    or_(
-                        and_(
-                            extract('year', DlgRaw.scrape_timestamp) == year,
-                            extract('month', DlgRaw.scrape_timestamp) == month,
-                            extract('day', DlgRaw.scrape_timestamp) >= 8,
-                        ),
-                        and_(
-                            extract('year', DlgRaw.scrape_timestamp) == next_year,
-                            extract('month', DlgRaw.scrape_timestamp) == next_month,
-                            extract('day', DlgRaw.scrape_timestamp) < 8,
-                        ),
-                    )
-                )
-            elif month is not None:
+            if month is not None:
                 query = query.filter(extract('month', DlgRaw.scrape_timestamp) == month)
-            elif year is not None:
+            if year is not None:
                 query = query.filter(extract('year', DlgRaw.scrape_timestamp) == year)
 
+            count = query.count()
             if page and per_page:
                 query = query.offset((page - 1) * per_page).limit(per_page)
             rows = query.all()
-
-            # If window is open (today >= 8th of requested month) but no rows found,
-            # return a descriptive message instead of a silent empty result.
-            if not rows and month is not None and year is not None:
-                today = dt.date.today()
-                window_open_date = dt.date(year, month, 8)
-                if today >= window_open_date:
-                    return [], 0, 0, 0.0, 0, "No data scraped for this month. Please click rescrape to try again"
-                return [], 0, 0, 0.0, 0, None
-
             result = []
             portfolios = set()
             amount = 0
             unique_lenders = set()
-            last_lender = None
             for r in rows:
-                effective_lender = r.lender if r.lender else last_lender
-                if r.lender:
-                    last_lender = r.lender
-
                 if r.portfolio:
-                    portfolios.add((effective_lender, r.portfolio))
-
+                    portfolios.add(r.portfolio)
                 amt = float(r.amount) if r.amount is not None else 0.0
                 amount = amount + amt
                 if r.lender:
@@ -556,8 +585,9 @@ class ReportsManager:
                     "dlg_url": r.dlg_url,
                     "complete": r.complete,
                 })
-            no_of_portfolios = len(portfolios) if portfolios else len(unique_lenders)
-            return result, len(result), no_of_portfolios, amount, len(unique_lenders), None
+            if (len(portfolios) < len(unique_lenders)):
+                no_of_portfolios = len(unique_lenders)
+            return result, count, no_of_portfolios, amount, len(unique_lenders)
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
             raise
@@ -570,7 +600,8 @@ class ReportsManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(
-                func.concat(LspSummary.scrape_year, "-", func.lpad(func.cast(LspSummary.scrape_month, String), 2, "0")).label("month_year"),
+                func.concat(LspSummary.scrape_year, "-",
+                            func.lpad(func.cast(LspSummary.scrape_month, String), 2, "0")).label("month_year"),
                 func.sum(LspSummary.total_amount).label("total_amount"),
                 func.sum(LspSummary.total_portfolios).label("total_portfolios"),
                 func.sum(LspSummary.total_lenders).label("total_lenders"),

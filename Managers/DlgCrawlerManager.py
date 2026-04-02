@@ -57,7 +57,6 @@ class DlgCrawlerManager:
                 }
                 
                 lsp_id = row.lsp_id
-                lsp_name = row.lsp_name
                 lender = row.lender or ""
                 portfolio = row.portfolio or ""
                 as_on_ts = row.as_on_timestamp
@@ -69,7 +68,7 @@ class DlgCrawlerManager:
                     if isinstance(row.amount, (int, float)):
                         amount_val = float(row.amount)
                     else:
-                        parsed = parse_amount_any(row.amount)
+
                         parsed = parse_amount_any(row.amount)
                         if parsed is not None:
                             amount_val = normalize_amount_to_crores(parsed)
@@ -100,17 +99,13 @@ class DlgCrawlerManager:
                 else:
                     as_on_ts_parsed = parse_date_any(as_on_ts)
                 # avoid inserting duplicates: match on lsp_id + lsp_name + lender + portfolio + as_on_timestamp
-                exists = None
-                try:
-                    exists = session.query(DlgRaw).filter_by(
-                        lsp_id=lsp_id,
-                        lsp_name=row.lsp_name,
-                        lender=lender,
-                        portfolio=portfolio,
-                        as_on_timestamp=as_on_ts,
-                    ).first()
-                except Exception:
-                    exists = None
+                exists = session.query(DlgRaw).filter_by(
+                    lsp_id=lsp_id,
+                    lsp_name=row.lsp_name,
+                    lender=lender,
+                    portfolio=portfolio,
+                    as_on_timestamp=as_on_ts,
+                ).first()
 
                 if exists:
                     # skip duplicate

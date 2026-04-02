@@ -1,7 +1,7 @@
 """
 DlgRawService for add, update, and delete of DlgRaw records.
 """
-import datetime as dt
+from datetime import datetime, timezone
 from typing import Optional, Tuple, Dict, Any
 
 from utils.logger_config import logger_method
@@ -36,7 +36,7 @@ class DlgRawService:
                 raise Exception(f"LSP with id={raw_input.lsp_id} not found or inactive")
             lsp = lsp_records[0]
             raw_input.lsp_name = lsp["name"]
-            raw_input.scrape_timestamp = dt.datetime.now(tz=dt.timezone.utc)
+            raw_input.scrape_timestamp = f"{datetime.now(tz=timezone.utc)}"
 
             # Compute status based on field values and temporal freshness
             if raw_input.portfolio is None or raw_input.amount is None:
@@ -51,7 +51,7 @@ class DlgRawService:
                     exp_month = 12 if win_month == 1 else win_month - 1
                     ason = raw_input.as_on_timestamp
                     if isinstance(ason, str):
-                        ason = dt.datetime.fromisoformat(ason)
+                        ason = datetime.fromisoformat(ason)
                     if ason.year != exp_year or ason.month != exp_month:
                         raw_input.complete = CrawlStatus.STALE.value
                     else:
@@ -66,7 +66,7 @@ class DlgRawService:
                 error_msg = f"DlgRaw record already exists for lsp_id={raw_input.lsp_id}"
                 self.auditlog_service.record(
                     self.auditlog_service.build(
-                        lsp_id=raw_input.lsp_id,
+                        lsp_id=f"{raw_input.lsp_id}",
                         action_taken=AuditAction.INSERT_DLG_RAW,
                         auto_manual="manual",
                         user_id=user_id,
@@ -78,7 +78,7 @@ class DlgRawService:
 
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=raw_input.lsp_id,
+                    lsp_id=f"{raw_input.lsp_id}",
                     action_taken=AuditAction.INSERT_DLG_RAW,
                     auto_manual="manual",
                     user_id=user_id,
@@ -91,7 +91,7 @@ class DlgRawService:
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
-                    lsp_id=raw_input.lsp_id,
+                    lsp_id=f"{raw_input.lsp_id}",
                     action_taken=AuditAction.INSERT_DLG_RAW,
                     auto_manual="manual",
                     user_id=user_id,

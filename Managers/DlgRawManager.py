@@ -145,7 +145,7 @@ class DlgRawManager:
         finally:
             session.close()
 
-    def delete(self, raw_id: int) -> int:
+    def delete(self, raw_id: int):
         """Delete a DlgRaw record by its primary id.
 
         Args:
