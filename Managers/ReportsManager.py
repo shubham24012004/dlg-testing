@@ -553,22 +553,59 @@ class ReportsManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(DlgRaw).filter(DlgRaw.lsp_id == lsp_id).order_by(DlgRaw.scrape_timestamp.desc())
-            if month is not None:
+
+            # Filter by month window (8th of month to 7th of next month) rather than
+            # calendar month, so the raw API aligns with how summaries are grouped.
+            if month is not None and year is not None:
+                if month == 12:
+                    next_month, next_year = 1, year + 1
+                else:
+                    next_month, next_year = month + 1, year
+                query = query.filter(
+                    or_(
+                        and_(
+                            extract('year', DlgRaw.scrape_timestamp) == year,
+                            extract('month', DlgRaw.scrape_timestamp) == month,
+                            extract('day', DlgRaw.scrape_timestamp) >= 8,
+                        ),
+                        and_(
+                            extract('year', DlgRaw.scrape_timestamp) == next_year,
+                            extract('month', DlgRaw.scrape_timestamp) == next_month,
+                            extract('day', DlgRaw.scrape_timestamp) < 8,
+                        ),
+                    )
+                )
+            elif month is not None:
                 query = query.filter(extract('month', DlgRaw.scrape_timestamp) == month)
-            if year is not None:
+            elif year is not None:
                 query = query.filter(extract('year', DlgRaw.scrape_timestamp) == year)
 
-            count = query.count()
             if page and per_page:
                 query = query.offset((page - 1) * per_page).limit(per_page)
             rows = query.all()
+
+            # If window is open (today >= 8th of requested month) but no rows found,
+            # return a descriptive message instead of a silent empty result.
+            if not rows and month is not None and year is not None:
+                today = dt.date.today()
+                window_open_date = dt.date(year, month, 8)
+                if today >= window_open_date:
+                    return [], 0, 0, 0.0, 0, "No data scraped for this month. Please click rescrape to try again"
+                return [], 0, 0, 0.0, 0, None
+
             result = []
             portfolios = set()
             amount = 0
             unique_lenders = set()
+            last_lender = None
             for r in rows:
+                effective_lender = r.lender if r.lender else last_lender
+                if r.lender:
+                    last_lender = r.lender
+
                 if r.portfolio:
-                    portfolios.add(r.portfolio)
+                    portfolios.add((effective_lender, r.portfolio))
+
                 amt = float(r.amount) if r.amount is not None else 0.0
                 amount = amount + amt
                 if r.lender:
@@ -585,9 +622,8 @@ class ReportsManager:
                     "dlg_url": r.dlg_url,
                     "complete": r.complete,
                 })
-            if (len(portfolios) < len(unique_lenders)):
-                no_of_portfolios = len(unique_lenders)
-            return result, count, no_of_portfolios, amount, len(unique_lenders)
+            no_of_portfolios = len(portfolios) if portfolios else len(unique_lenders)
+            return result, len(result), no_of_portfolios, amount, len(unique_lenders), None
         except Exception as e:
             self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
             raise
