@@ -344,9 +344,17 @@ def extract_from_pdf(fetch: FetchResult, lsp_name: Optional[str] = None, rules: 
                 for _row in _tbl:
                     if not any(_cell for _cell in _row):
                         continue
+                    # Resolve column indices from rules field_map (e.g. "col_2" -> 2).
+                    # To fix layout changes, update rules_json in the DB; no code edit needed.
+                    _fm = (page_rules or {}).get('field_map', {})
+                    def _col_idx(spec: Any, default: int) -> int:
+                        _cm = re.match(r'^col_(\d+)$', str(spec)) if spec else None
+                        return int(_cm.group(1)) if _cm else default
+                    _lender_col = _col_idx(_fm.get('lender'), 1)
+                    _amount_col = _col_idx(_fm.get('amount'), 5)
                     _first = (_row[0] or '').strip() if _row[0] else ''
-                    _lender = (_row[1] or '').strip() if len(_row) > 1 and _row[1] else ''
-                    _amount_raw = _row[5] if len(_row) > 5 else None
+                    _lender = (_row[_lender_col] or '').strip() if len(_row) > _lender_col and _row[_lender_col] else ''
+                    _amount_raw = _row[_amount_col] if len(_row) > _amount_col else None
                     _amount = None
                     if _amount_raw is not None:
                         _m = re.search(r'([0-9]+(?:\.[0-9]+)?)', str(_amount_raw).replace(',', ''))
@@ -387,7 +395,7 @@ def extract_from_pdf(fetch: FetchResult, lsp_name: Optional[str] = None, rules: 
                     if _amount is not None and not _lender:
                         # look left for lender
                         _found = None
-                        for _c in range(2, -1, -1):
+                        for _c in range(_lender_col - 1, -1, -1):
                             if len(_row) > _c and _row[_c]:
                                 val = str(_row[_c]).strip()
                                 if val and not val.isdigit():
