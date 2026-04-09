@@ -120,8 +120,7 @@ class LSPMasterService:
 
     def find_dlg_url(self, home_url):
         dlg_url = None
-        reason = None
-        lsp_name = ""
+        reason = None        
         try:
             dlg_url, reason = self.disclosure_url_service.find_dlg_disclosure_url(home_url)
         except Exception as ex:
@@ -151,7 +150,7 @@ class LSPMasterService:
         return dlg_url, reason
 
     def load_active(self, lsp_id: Optional[int] = None) -> List[LspMaster]:
-        result, total_count, rows = self.list_lsp_master(active_only=True, lsp_id=lsp_id, per_page=None)
+        result, _, _ = self.list_lsp_master(active_only=True, lsp_id=lsp_id, per_page=None)
         lsp_master_list = []
         for row in result:
             lsp_master_obj = LspMaster(**row)

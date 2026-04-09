@@ -1,4 +1,5 @@
 import datetime as dt
+from Managers.DlgRawManager import DlgRawManager
 from utils.logger_config import logger_method
 from typing import Any, Dict, List, Optional, Tuple
 from utils.simple_ocr_extractor import extract_simple
@@ -41,6 +42,7 @@ class DlgCrawlerService:
         self.logger = logger_method(__name__)
         self.user_claims = user_claims
         self.crawler_manager = DlgCrawlerManager(user_claims=user_claims)
+        self.raw_manager = DlgRawManager(user_claims=user_claims)
         self.auditlog_service = AuditLogService(user_claims)
 
     def run_scrape_sources(self, sources: List[LspMaster]) -> None:
@@ -159,6 +161,20 @@ class DlgCrawlerService:
                 dlg_row.lsp_id = source.id
                 dlg_row.lsp_name = source.name
                 dlg_row.dlg_url = source.dlg_url
+            # check of stale rows with same lsp_id + as_on_timestamp + Stale already exist and delete to avoid duplicates before appending
+            existing_rows = self.crawler_manager.get_existing_rows(source.id, dlg_rows[0].as_on_timestamp, scrape_ts)
+            for row in existing_rows:
+                self.raw_manager.delete(row.id)
+            
+            # if as on year and month is the same as scrape year and month 
+            # (on 29th or 30th April we find DLG data for As on 30th April)
+            # then they have updated their website early we can skip it as it 
+            # will be picked in next month crawl and avoid duplicates instead of creating new row with future scrape timestamp
+            if dlg_rows[0].as_on_timestamp is not None:
+                if scrape_ts.month == dlg_rows[0].as_on_timestamp.month and scrape_ts.year == dlg_rows[0].as_on_timestamp.year:
+                    self.logger.info(f"Skipping creation of new row for {source.name} as on timestamp {dlg_rows[0].as_on_timestamp} since it is same month and year as scrape timestamp {scrape_ts} and existing row will be picked in next month crawl")
+                    return
+            
             self.crawler_manager.append(dlg_rows)
             return
 

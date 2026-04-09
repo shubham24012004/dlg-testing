@@ -109,16 +109,11 @@ class ReportsManager:
                 return None
             day = ts.day
             month = ts.month
-            year = ts.year
-            # If day >= 8, this record belongs to the current month window
-            # If day < 8, it belongs to the previous month window
-            if day < 8:
-                if month == 1:
-                    return year - 1, 12
-                else:
-                    return year, month - 1
+            year = ts.year            
+            if month == 1:
+                return year - 1, 12
             else:
-                return year, month
+                return year, month - 1
 
         df["month_window"] = df["scrape_timestamp"].apply(get_month_window)
 
@@ -214,9 +209,9 @@ class ReportsManager:
                 if grp["as_on_timestamp"].notna().any():
                     last_ason = grp["as_on_timestamp"].max()
 
-                # Extract scrape_year and scrape_month from the month_window
-                scrape_year = month_window[0]
-                scrape_month = month_window[1]
+                # Extract prev_year and prev_month from the month_window
+                prev_year = month_window[0]
+                prev_month = month_window[1]
 
                 if last_ason is not None:
                     as_on_year = int(last_ason.year)
@@ -228,15 +223,7 @@ class ReportsManager:
                 # Validate: as_on_timestamp should be from the previous month of scrape_timestamp
                 # If not, mark status as "Stale"
                 is_stale_by_date = False
-                if last_scrape is not None:
-                    # Calculate previous month
-                    if scrape_month == 1:
-                        prev_year = scrape_year - 1
-                        prev_month = 12
-                    else:
-                        prev_year = scrape_year
-                        prev_month = scrape_month - 1
-
+                if last_scrape is not None:                    
                     # Check if as_on_timestamp is from the previous month.
                     # Missing as_on is stale unless the crawl itself failed/no-data/missing.
                     if last_ason is None:
@@ -259,103 +246,12 @@ class ReportsManager:
                     "total_amount": total_amount,
                     "as_on_year": as_on_year,
                     "as_on_month": as_on_month,
-                    "scrape_year": scrape_year,
-                    "scrape_month": scrape_month,
+                    "scrape_year": last_scrape.year if last_scrape is not None else None,
+                    "scrape_month": last_scrape.month if last_scrape is not None else None,
                     "status": status,
                     "dlg_url": dlg_url,
                     "last_crawl_date": pd.to_datetime(last_scrape).to_pydatetime() if pd.notnull(last_scrape) else None,
                 })
-
-        # On/after the 10th of a month, if an LSP has no summary for that month,
-        # backfill from the previous available month and mark as stale.
-        # For historical month ranges, backfill every missing month in the range.
-        if pd.notnull(start_ts) and pd.notnull(end_ts):
-            target_months = []
-            cursor = dt.date(int(start_ts.year), int(start_ts.month), 1)
-            last_month = dt.date(int(end_ts.year), int(end_ts.month), 1)
-            while cursor <= last_month:
-                target_months.append((cursor.year, cursor.month))
-                if cursor.month == 12:
-                    cursor = dt.date(cursor.year + 1, 1, 1)
-                else:
-                    cursor = dt.date(cursor.year, cursor.month + 1, 1)
-
-            end_month_key = (int(end_ts.year), int(end_ts.month))
-            existing_keys = {
-                (int(s["lsp_id"]), int(s["scrape_year"]), int(s["scrape_month"]))
-                for s in summaries
-            }
-
-            session = self.conn_factory.get_session()
-            try:
-                lsp_rows = session.query(LspMaster.id, LspMaster.name, LspMaster.active).all()
-                for target_year, target_month in target_months:
-                    if (target_year, target_month) == end_month_key and int(end_ts.day) < 10:
-                        continue
-
-                    existing_db_lsp_ids = {
-                        row.lsp_id
-                        for row in session.query(LspSummary.lsp_id)
-                        .filter(
-                            LspSummary.scrape_year == int(target_year),
-                            LspSummary.scrape_month == int(target_month),
-                        )
-                        .all()
-                    }
-
-                    for lsp in lsp_rows:
-                        if hasattr(lsp, "active") and lsp.active is False:
-                            continue
-
-                        lsp_id = int(lsp.id)
-                        if lsp_id in existing_db_lsp_ids:
-                            continue
-
-                        target_key = (lsp_id, int(target_year), int(target_month))
-                        if target_key in existing_keys:
-                            continue
-
-                        previous = (
-                            session.query(LspSummary)
-                            .filter(LspSummary.lsp_id == lsp_id)
-                            .filter(
-                                or_(
-                                    LspSummary.scrape_year < target_year,
-                                    and_(
-                                        LspSummary.scrape_year == target_year,
-                                        LspSummary.scrape_month < target_month,
-                                    ),
-                                )
-                            )
-                            .order_by(
-                                LspSummary.scrape_year.desc(),
-                                LspSummary.scrape_month.desc(),
-                                LspSummary.id.desc(),
-                            )
-                            .first()
-                        )
-
-                        if previous is None:
-                            continue
-
-                        summaries.append({
-                            "lsp_id": lsp_id,
-                            "name": str(previous.name) if previous.name else str(getattr(lsp, "name", f"LSP-{lsp_id}")),
-                            "total_portfolios": int(
-                                previous.total_portfolios) if previous.total_portfolios is not None else 0,
-                            "total_lenders": int(previous.total_lenders) if previous.total_lenders is not None else 0,
-                            "total_amount": float(previous.total_amount) if previous.total_amount is not None else 0.0,
-                            "as_on_year": int(previous.as_on_year) if previous.as_on_year is not None else None,
-                            "as_on_month": int(previous.as_on_month) if previous.as_on_month is not None else None,
-                            "scrape_year": int(target_year),
-                            "scrape_month": int(target_month),
-                            "status": CrawlStatus.STALE,
-                            "dlg_url": previous.dlg_url,
-                            "last_crawl_date": previous.last_crawl_date,
-                        })
-                        existing_keys.add(target_key)
-            finally:
-                session.close()
 
         # upsert into DB
         session = self.conn_factory.get_session()

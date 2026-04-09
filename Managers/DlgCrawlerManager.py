@@ -3,7 +3,9 @@ DlgCrawlerService with DB support for audit logs and raw data.
 """
 import re
 import datetime as dt
+from sqlalchemy import extract  
 from typing import Iterable, Optional, Dict, Any
+from utils.constants import CrawlStatus
 from utils.logger_config import logger_method
 from Managers.AuditLogManager import AuditLogManager
 from DatabaseOperation.DatabaseModels.master_models import DlgRaw
@@ -38,6 +40,26 @@ class DlgCrawlerManager:
         user_role = self.user_claims.get('role', 'unknown')
         return f"[User: {username}, Role: {user_role}]"
 
+    def get_existing_rows(self, source_id: int, as_on_timestamp: dt.datetime, scrape_timestamp: dt.datetime) -> Iterable[DlgRaw]:
+        """Check for existing rows with same lsp_id + as_on_timestamp and stale status."""
+        session = self.conn_factory.get_session()
+        try:
+            existing = []            
+            existing = session.query(DlgRaw).filter_by(
+                lsp_id=source_id,
+                # as_on_timestamp=as_on_timestamp,
+                complete=CrawlStatus.STALE.value
+            ).filter( # compare only scrape month and year skip day also for duplicate check to handle cases where as_on_timestamp is same across months but different scrapes
+                extract('year', DlgRaw.scrape_timestamp) == scrape_timestamp.year,
+                extract('month', DlgRaw.scrape_timestamp) == scrape_timestamp.month
+            ).all()            
+            return existing
+        except Exception as exc:
+            self.logger.error(f"{self._get_user_info()} Error checking existing DlgRaw rows: {exc}")
+            return []
+        finally:
+            session.close()
+            
     def append(self, rows: Iterable[DlgRaw]) -> None:
         conn_factory = ConnectionFactory()
         session = conn_factory.get_session()
@@ -104,7 +126,10 @@ class DlgCrawlerManager:
                     lsp_name=row.lsp_name,
                     lender=lender,
                     portfolio=portfolio,
-                    as_on_timestamp=as_on_ts,
+                    as_on_timestamp=as_on_ts
+                ).filter( # compare only scrape month and year skip day also for duplicate check to handle cases where as_on_timestamp is same across months but different scrapes
+                    extract('year', DlgRaw.scrape_timestamp) == scrape_ts.year,
+                    extract('month', DlgRaw.scrape_timestamp) == scrape_ts.month
                 ).first()
 
                 if exists:

@@ -1446,11 +1446,20 @@ def get_month_window(ts) -> Optional[Tuple[int, int]]:
     day = ts.day
     month = ts.month
     year = ts.year
-    if day < 8:
-        if month == 1:
-            return year - 1, 12
-        return year, month - 1
-    return year, month
+    # if month in (1,3,5,7,8,10,12):
+    #     boundary_day = 31
+    # elif month in (4,6,9,11):
+    #     boundary_day = 30
+    # else:  # February
+    #     if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0):
+    #         boundary_day = 29
+    #     else:
+    #         boundary_day = 28
+    # if day == boundary_day:
+    if month == 1:
+        return year - 1, 12
+    return year, month - 1
+    # return year, month
 
 
 def normalize_rows(
@@ -1752,15 +1761,9 @@ def normalize_rows(
     except Exception as ex:
         error = str(ex)
         return CrawlStatus.ERROR, final_data, error
-
-    # Compute expected as_on month from scrape_ts using the shared month window boundary
-    window = get_month_window(scrape_ts)
-    if window:
-        win_year, win_month = window
-        expected_ason_year = win_year - 1 if win_month == 1 else win_year
-        expected_ason_month = 12 if win_month == 1 else win_month - 1
-    else:
-        expected_ason_year, expected_ason_month = None, None
+    
+    expected_ason_year, expected_ason_month = None, None
+    expected_ason_year, expected_ason_month = get_month_window(scrape_ts)    
 
     for r in final_data:
         if r["Portfolio"] is None or r["Amount"] is None:
