@@ -1148,13 +1148,13 @@ def parse_finnable_dlg_plain_text(
         if line.lower().startswith("total") or "last updated" in line.lower():
             break
 
-        # Check if line is a portfolio number (single digit)
+        # Check if line is a portfolio number (single digit or multi-digit)
         if re.match(r'^\d+$', line):
             portfolio_num = line
-            # Next line should be the amount
+            # Next line should be the amount (Indian comma format or decimal crore format)
             if i + 1 < len(lines):
                 next_line = lines[i + 1]
-                if re.match(r'^[\d,]+$', next_line):
+                if re.match(r'^[\d,.]+$', next_line):
                     # Remove commas and convert to float
                     amount_str = next_line.replace(',', '')
                     try:
