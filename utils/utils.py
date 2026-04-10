@@ -817,7 +817,7 @@ def extract_dlg_from_plain_text(
             return parse_finnable_dlg_plain_text(text, lsp_name, scrape_ts)
 
         # Check for Nira Finance (Wix grid layout – portfolio labels and amounts extracted separately)
-        if "nira" in lsp_name.lower() or "nirafinance" in text.lower() or "shuhari" in lsp_name:
+        if "nira" in lsp_name.lower() or "nirafinance" in text.lower() or "shuhari" in lsp_name.lower():
             return parse_nira_dlg_plain_text(text, lsp_name, scrape_ts)
 
         # Check if rules specify regex-based extraction
