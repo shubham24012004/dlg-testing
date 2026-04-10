@@ -187,7 +187,21 @@ class ReportsManager:
                 dlg_url = _pick_url(grp)
 
                 total_amount = float(grp["amount"].fillna(0.0).sum())
-                if "portfolio" in grp.columns:
+                if "portfolio" in grp.columns and "lender" in grp.columns:
+                    temp = grp[["lender", "portfolio"]].copy()
+                    # Replace empty strings with None before ffill so that blank lender
+                    # cells (stored as "" in DB) are treated the same as NULL, mirroring
+                    # the raw logic: `effective_lender = r.lender if r.lender else last_lender`.
+                    lender_for_fill = temp["lender"].replace("", None)
+                    temp["effective_lender"] = _normalize_text_series(lender_for_fill.ffill()).str.lower()
+                    temp["norm_portfolio"] = _normalize_text_series(temp["portfolio"])
+                    mask = temp["norm_portfolio"] != ""
+                    pairs = temp.loc[mask, ["effective_lender", "norm_portfolio"]].drop_duplicates()
+                    total_portfolios = int(len(pairs))
+                    if total_portfolios == 0:
+                        normalized_lender = _normalize_text_series(grp["lender"]).str.lower()
+                        total_portfolios = int(normalized_lender[normalized_lender != ""].nunique())
+                elif "portfolio" in grp.columns:
                     normalized_portfolio = _normalize_text_series(grp["portfolio"])
                     total_portfolios = int(normalized_portfolio[normalized_portfolio != ""].nunique())
                 else:
@@ -198,9 +212,6 @@ class ReportsManager:
                     total_lenders = int(normalized_lender[normalized_lender != ""].nunique())
                 else:
                     total_lenders = int(grp.shape[0])
-
-                if total_portfolios < total_lenders:
-                    total_portfolios = total_lenders
                 last_scrape = None
                 if grp["scrape_timestamp"].notna().any():
                     last_scrape = grp["scrape_timestamp"].max()
