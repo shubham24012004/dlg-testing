@@ -650,7 +650,9 @@ def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = No
                 colspan = int(first_cell.get("colspan", 1) or 1)
                 has_th = len(trs[0].find_all("th")) > 0
                 text = first_cell.get_text(separator=" ", strip=True)
-                if colspan > 1 and not has_th and text:
+                # A single cell spanning multiple columns is a caption regardless of whether
+                # it uses <th> or <td> (e.g. "As on 31 March 2026" colspan=2 in Branch table)
+                if colspan > 1 and text:
                     trs = trs[1:]
                     continue
                 break
