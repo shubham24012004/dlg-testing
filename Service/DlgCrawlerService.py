@@ -309,17 +309,17 @@ class DlgCrawlerService:
                 # Use extract_from_pdf which now has a per-LSP conditional block
                 return extract_from_pdf(fetch, lsp_name=source.name, rules=rules), ""
             if parse_hint == "html_table":
-                return extract_from_html_tables(fetch, table_index=rules.get("table_index")), "None"
+                return extract_from_html_tables(fetch, table_index=rules.get("table_index"), skip_th_captions=bool(rules.get("skip_th_captions"))), "None"
 
             # auto
             if looks_like_pdf(fetch):
                 return extract_from_pdf(fetch), ""
 
-            rows = extract_from_html_tables(fetch, table_index=rules.get("table_index"))
+            rows = extract_from_html_tables(fetch, table_index=rules.get("table_index"), skip_th_captions=bool(rules.get("skip_th_captions")))
             if not rows and PLAYWRIGHT_AVAILABLE and fetch.fetch_mode_used != "playwright":
                 fetch_pw = fetch_with_playwright(source.dlg_url, pre_click_js=rules.get("pre_click_js"),
                                                  wait_ms=rules.get("playwright_wait_ms") or 0)
-                rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"))
+                rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"), skip_th_captions=bool(rules.get("skip_th_captions")))
             return rows, ""
         except Exception as exc:
             self.logger.error(f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}")

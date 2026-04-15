@@ -606,7 +606,7 @@ def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dic
 
 
 # noinspection PyArgumentList
-def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = None) -> List[Dict[str, Any]]:
+def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = None, skip_th_captions: bool = False) -> List[Dict[str, Any]]:
     try:
         soup = BeautifulSoup(fetch.body, "html.parser")
         tables = soup.find_all("table")
@@ -650,7 +650,9 @@ def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = No
                 colspan = int(first_cell.get("colspan", 1) or 1)
                 has_th = len(trs[0].find_all("th")) > 0
                 text = first_cell.get_text(separator=" ", strip=True)
-                if colspan > 1 and not has_th and text:
+                # skip_th_captions: also treat a spanning <th> as a caption row
+                # (e.g. <th colspan="2">As on 31 March 2026</th> on branchapp.in)
+                if colspan > 1 and text and (not has_th or skip_th_captions):
                     trs = trs[1:]
                     continue
                 break
