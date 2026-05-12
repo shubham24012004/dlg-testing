@@ -606,7 +606,7 @@ def _extract_portfolio_rows_from_pdf_text(text: str, ason_text: str) -> List[Dic
 
 
 # noinspection PyArgumentList
-def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = None) -> List[Dict[str, Any]]:
+def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = None, skip_th_captions: bool = False) -> List[Dict[str, Any]]:
     try:
         soup = BeautifulSoup(fetch.body, "html.parser")
         tables = soup.find_all("table")
@@ -650,7 +650,9 @@ def extract_from_html_tables(fetch: FetchResult, table_index: Optional[int] = No
                 colspan = int(first_cell.get("colspan", 1) or 1)
                 has_th = len(trs[0].find_all("th")) > 0
                 text = first_cell.get_text(separator=" ", strip=True)
-                if colspan > 1 and not has_th and text:
+                # skip_th_captions: also treat a spanning <th> as a caption row
+                # (e.g. <th colspan="2">As on 31 March 2026</th> on branchapp.in)
+                if colspan > 1 and text and (not has_th or skip_th_captions):
                     trs = trs[1:]
                     continue
                 break
@@ -815,6 +817,10 @@ def extract_dlg_from_plain_text(
         # Check for Finnable-specific format (alternating portfolio number and amount lines)
         if "Finnable" in lsp_name or ("Portfolio Number" in text and "Disbursement" in text):
             return parse_finnable_dlg_plain_text(text, lsp_name, scrape_ts)
+
+        # Check for Nira Finance (Wix grid layout – portfolio labels and amounts extracted separately)
+        if "nira" in lsp_name.lower() or "nirafinance" in text.lower() or "shuhari" in lsp_name.lower():
+            return parse_nira_dlg_plain_text(text, lsp_name, scrape_ts)
 
         # Check if rules specify regex-based extraction
         if rules_json:
@@ -1094,6 +1100,79 @@ def parse_cred_style_dlg_plain_text(
         raise ex
 
     return deduped
+
+
+def parse_nira_dlg_plain_text(
+        text: str,
+        lsp_name: str,
+        scrape_ts: dt.datetime
+) -> List[Dict[str, Any]]:
+    """
+    Parse Nira Finance (Shuhari Tech Ventures) DLG disclosure page.
+
+    The Wix grid layout causes the text extractor to emit portfolio names and their
+    amounts in unpredictable groupings — sometimes the amount immediately follows its
+    portfolio name, sometimes several portfolio names appear consecutively before a
+    matching batch of amounts appears.
+
+    Strategy: collect all Portfolio-N labels (in document order) and all Rs./INR crore
+    amounts (in document order), skip the 'Total' row amount, then zip the two lists.
+    The counts always match because every listed portfolio has exactly one amount cell.
+
+    Date format: "Last updated on <Month> <DD>,? <YYYY>"
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    # ── as-on date ────────────────────────────────────────────────────────────
+    as_on_date = None
+    date_match = re.search(
+        r"Last updated on ([A-Za-z]+ \d{1,2},?\s*\d{4})",
+        text,
+        re.IGNORECASE,
+    )
+    if date_match:
+        as_on_date = parse_date_any(date_match.group(1).replace(",", "").strip())
+
+    # ── collect portfolio labels in order ─────────────────────────────────────
+    portfolio_pattern = re.compile(r"^Portfolio\s+(\d+)$", re.IGNORECASE)
+    portfolios: List[str] = []
+    for ln in lines:
+        m = portfolio_pattern.match(ln)
+        if m:
+            portfolios.append(f"Portfolio {m.group(1)}")
+
+    # ── collect amounts in order, skipping the Total row ─────────────────────
+    amount_pattern = re.compile(
+        r"(?:Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)\s*Crore?", re.IGNORECASE
+    )
+    amounts: List[float] = []
+    skip_next_amount = False
+    for ln in lines:
+        if re.match(r"^Total", ln, re.IGNORECASE):
+            skip_next_amount = True
+            continue
+        m = amount_pattern.search(ln)
+        if m:
+            if skip_next_amount:
+                skip_next_amount = False
+                continue
+            try:
+                amounts.append(float(m.group(1).replace(",", "")))
+            except ValueError:
+                pass
+
+    # ── zip & build rows ──────────────────────────────────────────────────────
+    rows: List[Dict[str, Any]] = []
+    for portfolio, amount in zip(portfolios, amounts):
+        rows.append({
+            "LSP Name": lsp_name,
+            "Lender": None,
+            "Portfolio": portfolio,
+            "Amount": amount,
+            "AsOnTimestamp": as_on_date,
+            "ScrapeTimestamp": scrape_ts,
+        })
+    return rows
 
 
 def parse_finnable_dlg_plain_text(
