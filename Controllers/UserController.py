@@ -265,7 +265,6 @@ def reset_password() -> Any:
         # Reset password
         user_service = UserService()
         hashed_password = default_password
-        print(f"Hashed password for default password: {hashed_password}")
         success, error = user_service.set_password(data['username'], hashed_password, reset_password=True)
 
         if not success:

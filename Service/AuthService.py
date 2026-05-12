@@ -60,10 +60,12 @@ class AuthService:
 
             if not user.password:
                 error_msg = "User Password not found in DB. Please reset password."
+                self.logger.warning(f"Login failed for username={username}: {error_msg}")
                 return False, None, error_msg
 
             if not self.auth_manager.verify_password(password, user.password):
                 error_msg = "Invalid password"
+                self.logger.warning(f"Login failed for username={username}: invalid password")
                 return False, None, error_msg
 
             self.logger.info(f"User authenticated successfully: {username}")
@@ -90,6 +92,7 @@ class AuthService:
             self.logger.info(f"User authenticated: {username}")
             return True, user_data, None
         except Exception as ex:
+            self.logger.exception(f"Unexpected error during authentication for username={username}: {ex}")
             user_id = username
             self.auditlog_service.record(
                 self.auditlog_service.build(

@@ -48,6 +48,7 @@ class UserService:
             self.logger.info(f"New user added: {user_details.username}")
             return True, None
         except Exception as ex:
+            self.logger.exception(f"Error adding user username={user_details.username}: {ex}")
             user_id = self.user_claims.get('username') if self.user_claims else "admin"
             self.auditlog_service.record(
                 self.auditlog_service.build(
@@ -108,7 +109,7 @@ class UserService:
                              "request_object": {"user_id": user_id, "details": user_details.__dict__}}
                 )
             )
-            self.logger.error(f"Error updating user {user_id}: {str(ex)}")
+            self.logger.exception(f"Error updating user {user_id}: {str(ex)}")
             raise ex
 
     def list_users(
@@ -137,7 +138,7 @@ class UserService:
             self.logger.info(f"Retrieved {total_count} users")
             return results, total_count, rows
         except Exception as ex:
-            self.logger.error(f"Error listing users: {str(ex)}")
+            self.logger.exception(f"Error listing users: {str(ex)}")
             raise ex
 
     def set_password(self, username, new_password, reset_password) -> Tuple[bool, Optional[str]]:
@@ -180,5 +181,5 @@ class UserService:
                     payload={"status": "Exception", "details": str(ex), "request_object": {"username": username}}
                 )
             )
-            self.logger.error(f"Error resetting password for user {username}: {str(ex)}")
+            self.logger.exception(f"Error resetting password for user {username}: {str(ex)}")
             raise ex

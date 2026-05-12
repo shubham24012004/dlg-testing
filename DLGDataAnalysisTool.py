@@ -85,8 +85,7 @@ def cron_run_all_scrapes() -> None:
 
 
 def cron_run_lsp_summarize() -> None:
-    """Cron task: run LSP summarization for the default date window
-    (15th of previous month → 15th of current month).
+    """Cron task: run LSP summarization for the default date window    
     """
     today = datetime.now()
     start_dt = today - timedelta(days=30)

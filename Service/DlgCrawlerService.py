@@ -63,7 +63,7 @@ class DlgCrawlerService:
                         payload={"status": status.value, "details": error, "ts": scrape_started_at.isoformat()}
                     )
                 )
-                self.logger.info(f"[OK] {source.name} -> {status.value}  -> {error}")
+                self.logger.info(f"{source.name} -> {status.value}  -> {error}")
             except Exception as exc:
                 self.persist_error(source, scrape_started_at)
                 user_id = self.user_claims.get('username') if self.user_claims else "system"
@@ -76,7 +76,7 @@ class DlgCrawlerService:
                         payload={"status": "Error", "details": str(exc)[:200], "ts": scrape_started_at.isoformat()}
                     )
                 )
-                self.logger.error(f"[ERR logging Audit Log] {source.name} -> Error ({str(exc)[:120]})")
+                self.logger.exception(f"Scrape failed for {source.name}: {str(exc)[:120]}")
 
     def scrape_one(self, source: LspMaster) -> Tuple[
         CrawlStatus, Optional[str], Optional[str], List[Dict[str, Any]], str]:
@@ -93,6 +93,7 @@ class DlgCrawlerService:
             fetch = self._execute_fetch(source, pre_click_js, wait_ms=playwright_wait_ms)  # T&C
 
         except Exception as exc:
+            self.logger.error(f"{self._get_user_info()} Failed to fetch data for {source.name}: {exc}")
             return CrawlStatus.ERROR, None, None, [], str(exc)
 
         # For OCR with HTML→PDF rendering, extract page-level values (like dates) from HTML before rendering
@@ -112,6 +113,7 @@ class DlgCrawlerService:
                         wait_until=simple_cfg.get("render_wait_until") or "networkidle",
                         pre_click_js=pre_click_js)
                 except Exception as exc:
+                    self.logger.error(f"{self._get_user_info()} OCR with HTML→PDF rendering failed for {source.name}: {exc}")
                     return CrawlStatus.ERROR, None, None, [], f"OCR with HTML→PDF rendering failed: {exc}"
             else:
                 raise RuntimeError(
@@ -154,59 +156,67 @@ class DlgCrawlerService:
             source: LspMaster,
             scrape_ts: dt.datetime,
     ) -> None:
-        # Save actual data for COMPLETED, PARTIAL, and STALE (data exists but date missing)
-        if status in {CrawlStatus.COMPLETED, CrawlStatus.PARTIAL, CrawlStatus.STALE} and normalized_rows:
-            dlg_rows = [self.dlg_raw_from_dict(row, status.value) for row in normalized_rows]
-            for dlg_row in dlg_rows:
-                dlg_row.lsp_id = source.id
-                dlg_row.lsp_name = source.name
-                dlg_row.dlg_url = source.dlg_url
-            # check of stale rows with same lsp_id + as_on_timestamp + Stale already exist and delete to avoid duplicates before appending
-            existing_rows = self.crawler_manager.get_existing_rows(source.id, dlg_rows[0].as_on_timestamp, scrape_ts)
-            for row in existing_rows:
-                self.raw_manager.delete(row.id)
-            
-            # if as on year and month is the same as scrape year and month 
-            # (on 29th or 30th April we find DLG data for As on 30th April)
-            # then they have updated their website early we can skip it as it 
-            # will be picked in next month crawl and avoid duplicates instead of creating new row with future scrape timestamp
-            if dlg_rows[0].as_on_timestamp is not None:
-                if scrape_ts.month == dlg_rows[0].as_on_timestamp.month and scrape_ts.year == dlg_rows[0].as_on_timestamp.year:
-                    self.logger.info(f"Skipping creation of new row for {source.name} as on timestamp {dlg_rows[0].as_on_timestamp} since it is same month and year as scrape timestamp {scrape_ts} and existing row will be picked in next month crawl")
-                    return
-            
-            self.crawler_manager.append(dlg_rows)
-            return
+        try:
+            # Save actual data for COMPLETED, PARTIAL, and STALE (data exists but date missing)
+            if status in {CrawlStatus.COMPLETED, CrawlStatus.PARTIAL, CrawlStatus.STALE} and normalized_rows:
+                dlg_rows = [self.dlg_raw_from_dict(row, status.value) for row in normalized_rows]
+                for dlg_row in dlg_rows:
+                    dlg_row.lsp_id = source.id
+                    dlg_row.lsp_name = source.name
+                    dlg_row.dlg_url = source.dlg_url
+                # check of stale rows with same lsp_id + as_on_timestamp + Stale already exist and delete to avoid duplicates before appending
+                existing_rows = self.crawler_manager.get_existing_rows(source.id, dlg_rows[0].as_on_timestamp, scrape_ts)
+                for row in existing_rows:
+                    self.raw_manager.delete(row.id)
+                
+                # if as on year and month is the same as scrape year and month 
+                # (on 29th or 30th April we find DLG data for As on 30th April)
+                # then they have updated their website early we can skip it as it 
+                # will be picked in next month crawl and avoid duplicates instead of creating new row with future scrape timestamp
+                if dlg_rows[0].as_on_timestamp is not None:
+                    if scrape_ts.month == dlg_rows[0].as_on_timestamp.month and scrape_ts.year == dlg_rows[0].as_on_timestamp.year:
+                        self.logger.info(f"Skipping creation of new row for {source.name} as on timestamp {dlg_rows[0].as_on_timestamp} since it is same month and year as scrape timestamp {scrape_ts} and existing row will be picked in next month crawl")
+                        return
+                
+                self.crawler_manager.append(dlg_rows)
+                return
 
-        # For ERROR, MISSING, NO_DATA, or when no rows extracted, create dummy row
-        # if status in {CrawlStatus.MISSING, CrawlStatus.ERROR, CrawlStatus.NO_DATA}:
-        else:
+            # For ERROR, MISSING, NO_DATA, or when no rows extracted, create dummy row
+            # if status in {CrawlStatus.MISSING, CrawlStatus.ERROR, CrawlStatus.NO_DATA}:
+            else:
+                row = DlgRaw(
+                    lsp_id=source.id,
+                    lsp_name=source.name,
+                    lender=None,
+                    portfolio=None,
+                    amount=None,
+                    as_on_timestamp=None,
+                    scrape_timestamp=scrape_ts,
+                    complete=status.value,
+                    dlg_url=source.dlg_url if source.dlg_url is not None else "NA"
+                )
+                self.crawler_manager.append([row])
+        except Exception as exc:
+            self.logger.critical(f"{self._get_user_info()} Failed to persist rows for {source.name}: {exc}")
+            raise
+
+    def persist_error(self, source: LspMaster, scrape_ts: dt.datetime) -> None:
+        try:
             row = DlgRaw(
-                lsp_id=source.id,
                 lsp_name=source.name,
                 lender=None,
                 portfolio=None,
                 amount=None,
                 as_on_timestamp=None,
                 scrape_timestamp=scrape_ts,
-                complete=status.value,
+                complete=CrawlStatus.ERROR.value,
+                lsp_id=source.id,
                 dlg_url=source.dlg_url if source.dlg_url is not None else "NA"
             )
             self.crawler_manager.append([row])
-
-    def persist_error(self, source: LspMaster, scrape_ts: dt.datetime) -> None:
-        row = DlgRaw(
-            lsp_name=source.name,
-            lender=None,
-            portfolio=None,
-            amount=None,
-            as_on_timestamp=None,
-            scrape_timestamp=scrape_ts,
-            complete=CrawlStatus.ERROR.value,
-            lsp_id=source.id,
-            dlg_url=source.dlg_url if source.dlg_url is not None else "NA"
-        )
-        self.crawler_manager.append([row])
+        except Exception as exc:
+            self.logger.critical(f"{self._get_user_info()} Failed to persist error row for {source.name}: {exc}")
+            raise
 
     @staticmethod
     def dlg_raw_from_dict(data: Dict[str, Any], status: str) -> DlgRaw:
@@ -322,7 +332,7 @@ class DlgCrawlerService:
                 rows = extract_from_html_tables(fetch_pw, table_index=rules.get("table_index"))
             return rows, ""
         except Exception as exc:
-            self.logger.error(f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}")
+            self.logger.exception(f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}")
             error = f"Error parsing rows for {source.name} with parse_hint={parse_hint}: {exc}"
             return [], error
 
@@ -442,5 +452,5 @@ class DlgCrawlerService:
                 )
             return rows
         except Exception as exc:
-            self.logger.error(f"Error in OCR extraction for {lsp_name}: {exc}")
+            self.logger.exception(f"Error in OCR extraction for {lsp_name}: {exc}")
             raise RuntimeError(f"Error in OCR extraction for {lsp_name}: {exc}")

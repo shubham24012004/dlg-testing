@@ -63,6 +63,7 @@ class UserManager:
             return {"id": user.id, "username": user_details.username, "role": user_details.role}
         except SQLAlchemyError:
             session.rollback()
+            self.logger.critical(f"{self._get_user_info()} Error creating user username={user_details.username}")
             raise
         finally:
             session.close()
@@ -113,6 +114,7 @@ class UserManager:
             }
         except SQLAlchemyError:
             session.rollback()
+            self.logger.critical(f"{self._get_user_info()} Error updating user id={user_id}")
             raise
         finally:
             session.close()
@@ -170,7 +172,7 @@ class UserManager:
                 result.append(result_dict)
             return result, total_count, len(result)
         except Exception as ex:
-            self.logger.error(f"{self._get_user_info()} Exception in list_users {ex}")
+            self.logger.critical(f"{self._get_user_info()} Exception in list_users {ex}")
             raise
         finally:
             session.close()
@@ -190,6 +192,7 @@ class UserManager:
             return True
         except SQLAlchemyError:
             session.rollback()
+            self.logger.critical(f"{self._get_user_info()} Error updating last_login for user id={user_id}")
             raise
         finally:
             session.close()
@@ -210,7 +213,8 @@ class UserManager:
             session.commit()
         except SQLAlchemyError:
             session.rollback()
+            self.logger.critical(f"{self._get_user_info()} Error setting password for username={username}")
             raise
-        finally:            
+        finally:
             session.close()
         return True

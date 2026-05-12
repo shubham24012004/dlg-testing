@@ -8,6 +8,7 @@ from sqlalchemy import desc, asc, or_
 from sqlalchemy.exc import SQLAlchemyError
 from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
 from DatabaseOperation.DatabaseModels.master_models import Users
+from utils.logger_config import logger_method
 
 
 class AuthManager:
@@ -15,6 +16,7 @@ class AuthManager:
 
     def __init__(self, user_claims: Optional[Dict[str, Any]] = None):
         self.conn_factory = ConnectionFactory()
+        self.logger = logger_method(__name__)
 
     def find_user(self, username: str, role: str) -> Optional[Users]:
 
@@ -23,6 +25,7 @@ class AuthManager:
             return session.query(Users).filter_by(username=username, role=role).one_or_none()
         except Exception:
             session.rollback()
+            self.logger.critical(f"Error querying user username={username} role={role}")
             raise
         finally:
             session.close()
@@ -33,6 +36,7 @@ class AuthManager:
             return session.query(Users).filter_by(username=username).one_or_none()
         except Exception:
             session.rollback()
+            self.logger.critical(f"Error querying user by username={username}")
             raise
         finally:
             session.close()

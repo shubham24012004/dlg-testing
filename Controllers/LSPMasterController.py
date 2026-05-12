@@ -117,6 +117,7 @@ def handle_new_lsp_master():
     user_info = f"[User: {username}, Role: {user_role}]"
     payload = request.get_json(silent=True)
     if not payload:
+        logger.info(f"{user_info} Add LSP attempt with no request body")
         return jsonify(
             {"status": HTTPStatus.BAD_REQUEST, "message": 'No Data found',
              "user_info": user_info}), HTTPStatus.BAD_REQUEST
@@ -128,7 +129,7 @@ def handle_new_lsp_master():
         lsp = lsp_service.insert(lsp_master_ip)
         if not lsp:
             message = f"Could not insert New LSP {payload}. LSP already exists"
-            logger.error(f"{user_info} {message}")
+            logger.warning(f"{user_info} {message}")
             return jsonify(
                 {"status": HTTPStatus.INTERNAL_SERVER_ERROR, "message": message,
                  "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
@@ -154,6 +155,7 @@ def handle_update_lsp_master():
     user_info = f"[User: {username}, Role: {user_role}]"
     payload = request.get_json(silent=True)
     if not payload:
+        logger.info(f"{user_info} Update LSP attempt with no request body")
         return jsonify(
             {"status": HTTPStatus.BAD_REQUEST, "message": 'Missing input Payload',
              "user_info": user_info}), HTTPStatus.BAD_REQUEST

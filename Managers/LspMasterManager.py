@@ -58,6 +58,7 @@ class LspMasterManager:
             return result_dict
         except Exception:
             session.rollback()
+            self.logger.critical(f"{self._get_user_info()} Error inserting LSP name={lm.name}")
             raise
         finally:
             session.close()
@@ -109,6 +110,7 @@ class LspMasterManager:
             return result_dict
         except Exception:
             session.rollback()
+            self.logger.critical(f"{self._get_user_info()} Error updating LSP id={lm.id}")
             raise
         finally:
             session.close()
@@ -128,6 +130,7 @@ class LspMasterManager:
             self.logger.info(f"{self._get_user_info()} {existing.name} LSP Deleted Successfully")
         except Exception:
             session.rollback()
+            self.logger.critical(f"{self._get_user_info()} Error deleting LSP id={lsp_id}")
             raise
         finally:
             session.close()
@@ -186,7 +189,7 @@ class LspMasterManager:
             # return page results and total count (before pagination)
             return result, total_count, len(result)
         except Exception as ex:
-            self.logger.error(f"{self._get_user_info()} Exception in list_lsp_master {ex}")
+            self.logger.critical(f"{self._get_user_info()} Exception in list_lsp_master {ex}")
             raise
         finally:
             session.close()

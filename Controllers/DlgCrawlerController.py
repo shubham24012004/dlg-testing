@@ -50,5 +50,5 @@ def run_scrape(lsp_id: Optional[int] = 0, user_claims: Optional[Dict[str, Any]] 
         crawler_service.run_scrape_sources(sources)
         return len(sources)
     else:
-        logger.critical('No LSP Found')
+        logger.warning(f"No active LSP found for lsp_id={lsp_id}")
         return 0

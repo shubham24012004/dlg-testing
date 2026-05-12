@@ -43,6 +43,7 @@ class LSPMasterService:
             )
             return result
         except Exception as ex:
+            self.logger.exception(f"Error inserting LSP name={lm.lsp_name}: {ex}")
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
@@ -75,7 +76,8 @@ class LSPMasterService:
         except Exception as ex:
             input_obj = lm.__dict__
             del input_obj['_sa_instance_state']
-            print(input_obj)
+            self.logger.exception(f"Error updating LSP id={lm.id}: {ex}")
+            self.logger.debug(f"LSP update payload: {input_obj}")
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
@@ -106,6 +108,7 @@ class LSPMasterService:
             )
             return result
         except Exception as ex:
+            self.logger.exception(f"Error deleting LSP id={lsp_id}: {ex}")
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
@@ -124,6 +127,7 @@ class LSPMasterService:
         try:
             dlg_url, reason = self.disclosure_url_service.find_dlg_disclosure_url(home_url)
         except Exception as ex:
+            self.logger.exception(f"Error finding DLG URL for home_url={home_url}: {ex}")
             user_id = self.user_claims.get('username') if self.user_claims else "system"
             self.auditlog_service.record(
                 self.auditlog_service.build(
@@ -132,7 +136,7 @@ class LSPMasterService:
                     auto_manual="auto",
                     user_id=user_id,
                     payload={"status": "Exception", "details": f"{str(ex)} reason: {reason}",
-                             "request_object": f'lsp_id: {lsp_id}'}
+                             "request_object": f'home_url: {home_url}'}
                 )
             )
         user_id = self.user_claims.get('username') if self.user_claims else "system"

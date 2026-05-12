@@ -155,7 +155,8 @@ class DlgCrawlerManager:
                 self.logger.info(f"{self._get_user_info()} DLG row processed - status=inserted, payload={payload}")
             session.commit()
         except Exception as exc:
-            session.rollback()
-            self.logger.error(f"{self._get_user_info()} [DlgRawManager] DB append failed: {exc}")
+            session.rollback()            
+            self.logger.critical(f"{self._get_user_info()} [DlgRawManager] DB append failed for {lsp_id}: {exc}")
+            raise
         finally:
             session.close()

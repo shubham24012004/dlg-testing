@@ -98,7 +98,7 @@ class DlgRawService:
                     payload={"status": "Exception", "details": str(ex), "request_object": raw_input.__dict__}
                 )
             )
-            self.logger.error(f"Error inserting DlgRaw record: {str(ex)}")
+            self.logger.critical(f"Error inserting DlgRaw record: {str(ex)}")
             raise ex
 
     def update(self, raw_update: DlgRawUpdate) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:

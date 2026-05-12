@@ -42,6 +42,10 @@ class ReportsManager:
         # Normalize input for safer DB filtering and logging.
         start_ts = pd.to_datetime(start_date, errors="coerce")
         end_ts = pd.to_datetime(end_date, errors="coerce")
+        if pd.isnull(start_ts):
+            self.logger.warning(f"{user_info} Could not parse start_date '{start_date}'; proceeding with raw value")
+        if pd.isnull(end_ts):
+            self.logger.warning(f"{user_info} Could not parse end_date '{end_date}'; proceeding with raw value")
         query_start = start_ts.to_pydatetime() if pd.notnull(start_ts) else start_date
         query_end = end_ts.to_pydatetime() if pd.notnull(end_ts) else end_date
 
@@ -50,7 +54,7 @@ class ReportsManager:
             rows = session.query(DlgRaw).filter(DlgRaw.scrape_timestamp.between(query_start, query_end)).all()
         except Exception as e:
             session.close()
-            self.logger.error(f"{user_info} Failed to query DlgRaw rows: {e}")
+            self.logger.critical(f"{user_info} Failed to query DlgRaw rows: {e}")
             raise
 
         if not rows:
@@ -170,6 +174,9 @@ class ReportsManager:
 
             for (lsp_id, month_window), grp in grouped:
                 if not isinstance(month_window, tuple):
+                    self.logger.warning(
+                        f"{user_info} Skipping lsp_id={lsp_id} group with invalid month_window={month_window!r}"
+                    )
                     continue
 
                 status: CrawlStatus = CrawlStatus.MISSING
@@ -270,6 +277,11 @@ class ReportsManager:
                 )
                 # Delete extra duplicates, keep only the first
                 if len(duplicates) > 1:
+                    self.logger.warning(
+                        f"{user_info} Found {len(duplicates)} duplicate LspSummary rows for "
+                        f"lsp_id={s['lsp_id']} scrape={s['scrape_year']}-{s['scrape_month']}; "
+                        f"removing {len(duplicates) - 1} extra(s)"
+                    )
                     for dup in duplicates[1:]:
                         session.delete(dup)
                     session.flush()
@@ -315,7 +327,7 @@ class ReportsManager:
             return upserted
         except Exception as e:
             session.rollback()
-            self.logger.error(f"{user_info} Error upserting LSP summaries: {e}")
+            self.logger.critical(f"{user_info} Error upserting LSP summaries: {e}")
             raise
         finally:
             session.close()
@@ -391,7 +403,7 @@ class ReportsManager:
                 )
             return result, len(result)
         except Exception as e:
-            self.logger.exception(f"{user_info} Error fetching LSP summaries: {e}")
+            self.logger.critical(f"{user_info} Error fetching LSP summaries: {e}")
             raise
         finally:
             session.close()
@@ -474,7 +486,7 @@ class ReportsManager:
                 )
             return result, len(result), portfolios, amount, lenders
         except Exception as e:
-            self.logger.exception(f"{user_info} Error fetching LSP summaries: {e}")
+            self.logger.critical(f"{user_info} Error fetching LSP summaries: {e}")
             raise
         finally:
             session.close()
@@ -484,31 +496,10 @@ class ReportsManager:
         session = self.conn_factory.get_session()
         try:
             query = session.query(DlgRaw).filter(DlgRaw.lsp_id == lsp_id).order_by(DlgRaw.scrape_timestamp.desc())
-
-            # Filter by month window (8th of month to 7th of next month) rather than
-            # calendar month, so the raw API aligns with how summaries are grouped.
-            if month is not None and year is not None:
-                if month == 12:
-                    next_month, next_year = 1, year + 1
-                else:
-                    next_month, next_year = month + 1, year
-                query = query.filter(
-                    or_(
-                        and_(
-                            extract('year', DlgRaw.scrape_timestamp) == year,
-                            extract('month', DlgRaw.scrape_timestamp) == month,
-                            extract('day', DlgRaw.scrape_timestamp) >= 8,
-                        ),
-                        and_(
-                            extract('year', DlgRaw.scrape_timestamp) == next_year,
-                            extract('month', DlgRaw.scrape_timestamp) == next_month,
-                            extract('day', DlgRaw.scrape_timestamp) < 8,
-                        ),
-                    )
-                )
-            elif month is not None:
+            
+            if month is not None:
                 query = query.filter(extract('month', DlgRaw.scrape_timestamp) == month)
-            elif year is not None:
+            if year is not None:
                 query = query.filter(extract('year', DlgRaw.scrape_timestamp) == year)
 
             if page and per_page:
@@ -556,7 +547,7 @@ class ReportsManager:
             no_of_portfolios = len(portfolios) if portfolios else len(unique_lenders)
             return result, len(result), no_of_portfolios, amount, len(unique_lenders), None
         except Exception as e:
-            self.logger.exception(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
+            self.logger.critical(f"{user_info} Error fetching LSP raw data for lsp_id={lsp_id}: {e}")
             raise
         finally:
             session.close()
@@ -594,7 +585,7 @@ class ReportsManager:
                 })
             return result, len(result)
         except Exception as e:
-            self.logger.exception(f"{user_info} Error fetching LSP summary for graph: {e}")
+            self.logger.critical(f"{user_info} Error fetching LSP summary for graph: {e}")
             raise
         finally:
             session.close()
