@@ -35,7 +35,7 @@ def handle_trigger_scrape():
             logger.warning(f"{user_info} Scrape not done for LSP ID: {lsp_id}")
             return jsonify({"status": HTTPStatus.NOT_FOUND, "message": "Scrape Not Done", "user_info": user_info}), HTTPStatus.NOT_FOUND
     except Exception as exc:
-        logger.error(f"{user_info} Error triggering scrape: {str(exc)}", exc_info=True)
+        logger.critical(f"{user_info} Error triggering scrape: {str(exc)}", exc_info=True)
         return jsonify(
             {"status": HTTPStatus.INTERNAL_SERVER_ERROR,
              "message": f'Error Scrapping {lsp_id}', "user_info": user_info}), HTTPStatus.INTERNAL_SERVER_ERROR
