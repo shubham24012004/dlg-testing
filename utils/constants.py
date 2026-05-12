@@ -1,10 +1,6 @@
 from enum import Enum
 import os
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 
 class AuditAction(Enum):
     INSERT_LSP = "INSERT_LSP"

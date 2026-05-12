@@ -60,9 +60,8 @@ class DlgCrawlerManager:
         finally:
             session.close()
             
-    def append(self, rows: Iterable[DlgRaw]) -> None:
-        conn_factory = ConnectionFactory()
-        session = conn_factory.get_session()
+    def append(self, rows: Iterable[DlgRaw]) -> None:        
+        session = self.conn_factory.get_session()
         try:
             for row in rows:
                 # Create payload dict from row object

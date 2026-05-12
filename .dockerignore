@@ -1,0 +1,10 @@
+.env
+*.log
+.git
+.gitignore
+.dockerignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+postman/

@@ -1,20 +1,42 @@
 """
 ConnectionFactory for SQLite using SQLAlchemy ORM.
 """
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from dotenv import load_dotenv
 import os
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
 Base = declarative_base()
-load_dotenv()
+
+
+POSTGRES_ENV_VARS = (
+    "database_username",
+    "database_password",
+    "database_host",
+    "database_port",
+    "database_name",
+)
 
 class ConnectionFactory:
     """Provides SQLAlchemy engine and session for SQLite."""
 
     def __init__(self):
-        db_url = f'postgresql://{os.getenv("database_username")}:{os.getenv("database_password")}@{os.getenv("database_host")}:{os.getenv("database_port")}/{os.getenv("database_name")}'
-        if db_url:
+        postgres_config = {key: os.getenv(key) for key in POSTGRES_ENV_VARS}
+        present_keys = [key for key, value in postgres_config.items() if value]
+
+        if present_keys:
+            missing_keys = [key for key, value in postgres_config.items() if not value]
+            if missing_keys:
+                missing = ", ".join(missing_keys)
+                raise RuntimeError(
+                    f"Incomplete PostgreSQL configuration. Missing environment variables: {missing}"
+                )
+
+            db_url = (
+                f"postgresql://{postgres_config['database_username']}:{postgres_config['database_password']}"
+                f"@{postgres_config['database_host']}:{postgres_config['database_port']}"
+                f"/{postgres_config['database_name']}"
+            )
             # Use PostgreSQL or other database
             self.engine = create_engine(db_url, echo=False, future=True)
         else:

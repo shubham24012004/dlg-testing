@@ -10,9 +10,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
+from utils.getsecret import get_secret
+
+get_secret()
+
 from utils.logger_config import logger_method
 
 from Controllers.DlgCrawlerController import crawler_bp, run_scrape
@@ -35,9 +38,6 @@ try:
     APSCHEDULER_AVAILABLE = True
 except Exception:
     APSCHEDULER_AVAILABLE = False
-
-# Load environment variables
-load_dotenv()
 
 logger = logger_method(__name__)
 

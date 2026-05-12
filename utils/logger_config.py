@@ -1,9 +1,6 @@
 ﻿import logging
 import os
 from logging.handlers import RotatingFileHandler
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 def logger_method(name: str) -> logging.Logger:
