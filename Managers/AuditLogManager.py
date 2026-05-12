@@ -38,7 +38,7 @@ class AuditLogManager:
             return True
         except SQLAlchemyError as e:
             session.rollback()
-            self.logger.exception(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
+            self.logger.critical(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
             return False
         finally:
             session.close()
@@ -131,7 +131,7 @@ class AuditLogManager:
             return result, total_count, len(result)
 
         except SQLAlchemyError as e:
-            self.logger.exception(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
+            self.logger.critical(f"{self._get_user_info()} [AuditLogManagerDB] Error: {e}")
             # Return an empty result tuple so callers don't attempt to unpack None
             return [], 0, 0
         finally:
