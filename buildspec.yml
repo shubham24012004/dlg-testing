@@ -1,8 +1,10 @@
 version: 0.2
 
-# Required CodeBuild environment variables:
-#   AWS_DEFAULT_REGION   - e.g. ap-south-1
-#   ECR_REPOSITORY_NAME  - ECR repository name, e.g. dlg-analysis
+
+environment:
+  variables:
+    AWS_DEFAULT_REGION: "ap-south-1"
+    ECR_REPOSITORY_NAME: "dlg-analysis-backend"
 
 phases:
   pre_build:
