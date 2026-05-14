@@ -116,26 +116,25 @@ def main() -> None:
         if not APSCHEDULER_AVAILABLE:
             raise RuntimeError("APScheduler not installed; add it to requirements.txt")
 
-        # Only start scheduler once (avoid Flask reloader double-start)
-        if not settings.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-            scrape_cron = os.getenv("DLG_CRON", "0 0 * * *")          # Default: top of every hour
-            summarize_cron = os.getenv("DLG_SUMMARIZE_CRON", "0 1 * * *")  # Default: 01:00 on the 15th of each month
-            timezone = os.getenv("DLG_CRON_TZ", "UTC")
+        logger.info("DLG_CRON_ENABLED is set; initializing cron scheduler")
+        scrape_cron = os.getenv("DLG_CRON", "0 0 * * *")          # Default: top of every hour
+        summarize_cron = os.getenv("DLG_SUMMARIZE_CRON", "0 1 * * *")  # Default: 01:00 on the 15th of each month
+        timezone = os.getenv("DLG_CRON_TZ", "UTC")
 
-            scheduler = BackgroundScheduler(timezone=timezone)
-            scheduler.add_job(
-                cron_run_all_scrapes,
-                CronTrigger.from_crontab(scrape_cron, timezone=timezone)
-            )
-            scheduler.add_job(
-                cron_run_lsp_summarize,
-                CronTrigger.from_crontab(summarize_cron, timezone=timezone)
-            )
-            scheduler.start()
+        scheduler = BackgroundScheduler(timezone=timezone)
+        scheduler.add_job(
+            cron_run_all_scrapes,
+            CronTrigger.from_crontab(scrape_cron, timezone=timezone)
+        )
+        scheduler.add_job(
+            cron_run_lsp_summarize,
+            CronTrigger.from_crontab(summarize_cron, timezone=timezone)
+        )
+        scheduler.start()
 
-            logger.info(
-                f"Cron scheduler started: scrape='{scrape_cron}', summarize='{summarize_cron}' (tz={timezone})"
-            )
+        logger.info(
+            f"Cron scheduler started: scrape='{scrape_cron}', summarize='{summarize_cron}' (tz={timezone})"
+        )
 
     # Run Flask server
     logger.info("Starting Flask server on %s:%s", settings.host, settings.port)
