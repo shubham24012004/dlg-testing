@@ -29,7 +29,8 @@ phases:
       - docker push $ECR_REGISTRY/$ECR_REPOSITORY_NAME:latest
       - docker push $ECR_REGISTRY/$ECR_REPOSITORY_NAME:$IMAGE_TAG
       - printf '[{"name":"dlg-analysis","imageUri":"%s"}]' $ECR_REGISTRY/$ECR_REPOSITORY_NAME:$IMAGE_TAG > imagedefinitions.json
-      - echo Image pushed $ECR_REGISTRY/$ECR_REPOSITORY_NAME:$IMAGE_TAG
+      - echo Image pushed $ECR_REGISTRY/$ECR_REPOSITORY_NAME:$IMAGE_TAG      
+      - cat imagedefinitions.json
 
 artifacts:
   files:
