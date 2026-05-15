@@ -62,14 +62,14 @@ def ratelimit_handler(e):
     return jsonify({"status": 429, "message": "Rate limit exceeded"}), 429
 
 CORS(app)
-app.register_blueprint(auth_bp)
-app.register_blueprint(lsp_master_bp)
-app.register_blueprint(auditlog_bp)
-app.register_blueprint(crawler_bp)
-app.register_blueprint(reports_bp)
-app.register_blueprint(dashboard_bp)
-app.register_blueprint(user_bp)
-app.register_blueprint(dlg_raw_bp)
+app.register_blueprint(auth_bp, url_prefix="/dlg-analysis")
+app.register_blueprint(lsp_master_bp, url_prefix="/dlg-analysis")
+app.register_blueprint(auditlog_bp, url_prefix="/dlg-analysis")
+app.register_blueprint(crawler_bp, url_prefix="/dlg-analysis")
+app.register_blueprint(reports_bp, url_prefix="/dlg-analysis")
+app.register_blueprint(dashboard_bp, url_prefix="/dlg-analysis")
+app.register_blueprint(user_bp, url_prefix="/dlg-analysis")
+app.register_blueprint(dlg_raw_bp, url_prefix="/dlg-analysis")
 
 
 # ==================== Cron Tasks ====================
@@ -102,7 +102,7 @@ def cron_run_lsp_summarize() -> None:
 # ==================== Health & Utility Endpoints ====================
 
 @app.get("/healthz")
-def healthcheck() -> Any:
+def healthcheck() -> Any:    
     return jsonify({"status": "ok", "message": "OK"})
 
 
@@ -137,7 +137,7 @@ def main() -> None:
         )
 
     # Run Flask server
-    logger.info("Starting Flask server on %s:%s", settings.host, settings.port)
+    logger.info("Starting Flask server on %s:%s", settings.host, settings.port)    
     app.run(host=settings.host, port=settings.port, debug=settings.debug)
 
 
