@@ -54,6 +54,7 @@ class AppSettings:
 # Application configuration
 settings = AppSettings()
 app = Flask(__name__)
+app.url_map.strict_slashes = False  # Allow routes with or without trailing slash
 
 limiter.init_app(app)
 
