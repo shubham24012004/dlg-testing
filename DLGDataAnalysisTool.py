@@ -17,6 +17,12 @@ from utils.getsecret import get_secret
 get_secret()
 
 from utils.logger_config import logger_method
+from DatabaseOperation.SQLAlchemy.ConnectionFactory import ConnectionFactory
+from DatabaseOperation.DatabaseModels import master_models, report_models
+
+_startup_conn = ConnectionFactory()
+_startup_conn.create_all_tables(base=master_models.Base)
+_startup_conn.create_all_tables(base=report_models.Base)
 
 from Controllers.DlgCrawlerController import crawler_bp, run_scrape
 from Controllers.LSPMasterController import lsp_master_bp

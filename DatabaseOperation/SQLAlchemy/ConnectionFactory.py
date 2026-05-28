@@ -48,4 +48,13 @@ class ConnectionFactory:
         return self.SessionLocal()
 
     def create_all_tables(self, base=Base):
+        db_url = str(self.engine.url)
+        if db_url.startswith("postgresql"):
+            from sqlalchemy import text
+            schemas = {
+                tbl.schema for tbl in base.metadata.tables.values() if tbl.schema
+            }
+            with self.engine.begin() as conn:
+                for schema in schemas:
+                    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
         base.metadata.create_all(self.engine)

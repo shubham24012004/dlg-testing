@@ -15,7 +15,12 @@ def get_secret():
     if _secret_cache is not None:
         return _secret_cache
 
+    # Skip AWS when LOCAL_DEV=1 or no secret name configured
     secret_name = os.getenv("DLG_AWS_SECRET_NAME")
+    if os.getenv("LOCAL_DEV", "0") in {"1", "true", "True"} or not secret_name:
+        _secret_cache = {}
+        return _secret_cache
+
     region_name = "ap-south-1"
 
     # Create a Secrets Manager client
