@@ -45,6 +45,14 @@ class DlgCrawlerService:
         self.raw_manager = DlgRawManager(user_claims=user_claims)
         self.auditlog_service = AuditLogService(user_claims)
 
+    def _get_user_info(self) -> str:
+        """Get formatted user info string from user_claims."""
+        if not self.user_claims:
+            return "[User: system, Role: unknown]"
+        username = self.user_claims.get('username', 'unknown')
+        user_role = self.user_claims.get('role', 'unknown')
+        return f"[User: {username}, Role: {user_role}]"
+
     def run_scrape_sources(self, sources: List[LspMaster]) -> None:
         for source in sources:
             # Promote T-2 month-based URL to T-1 before scraping if a newer PDF exists

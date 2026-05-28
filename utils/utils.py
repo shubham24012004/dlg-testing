@@ -1730,6 +1730,22 @@ def normalize_rows(
                 val_cmp  = str(val).strip().lower()  if ci else str(val).strip()
                 if cell_cmp != val_cmp:
                     continue
+            row_exclude = rules.get("row_exclude")
+            if row_exclude:
+                ex_col = row_exclude.get("column")
+                ex_val = row_exclude.get("value")
+                ex_regex = row_exclude.get("regex")
+                ex_ci = row_exclude.get("case_insensitive", True)
+                ex_cell = str(rr.get(ex_col, "")).strip()
+                if ex_regex:
+                    _flags = re.IGNORECASE if ex_ci else 0
+                    if re.search(ex_regex, ex_cell, flags=_flags):
+                        continue
+                elif ex_val is not None:
+                    ex_cell_cmp = ex_cell.lower() if ex_ci else ex_cell
+                    ex_val_cmp  = str(ex_val).strip().lower() if ex_ci else str(ex_val).strip()
+                    if ex_cell_cmp == ex_val_cmp:
+                        continue
             # Check if row is already normalized (has capital-case keys from plain_text parsers)
             # Plain text parsers like extract_from_regex_patterns and parse_cred_style_dlg_plain_text
             # return pre-normalized rows with keys: LSP Name, Lender, Portfolio, Amount, AsOnTimestamp, ScrapeTimestamp
