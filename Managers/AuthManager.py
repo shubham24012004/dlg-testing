@@ -51,3 +51,5 @@ class AuthManager:
     def verify_password(user_password: str, hashed_password: str) -> bool:
         """Verify a user password against a hashed password from DB."""
         return check_password_hash(hashed_password, user_password)
+
+
